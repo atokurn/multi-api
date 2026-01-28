@@ -1,0 +1,874 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DramaBox, FlickReels & Melolo API Documentation</title>
+    <meta name="description" content="Dokumentasi API untuk DramaBox, FlickReels & Melolo - Drama streaming API">
+
+    <!-- Swagger UI CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css" />
+    <link rel="shortcut icon" href="https://fastly.jsdelivr.net/npm/swagger-ui-dist@5/favicon-32x32.png" />
+
+    <style>
+        html {
+            box-sizing: border-box;
+            overflow-y: scroll;
+        }
+
+        *,
+        *:before,
+        *:after {
+            box-sizing: inherit;
+        }
+
+        body {
+            margin: 0;
+            background: #fafafa;
+        }
+
+        .swagger-ui .topbar {
+            background-color: #1e293b;
+        }
+
+        .swagger-ui .info .title {
+            color: #1e293b;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="swagger-ui"></div>
+
+    <!-- Swagger UI Scripts -->
+    <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+    <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-standalone-preset.js"></script>
+
+    <script>
+        window.onload = function () {
+            // OpenAPI Specification
+            const spec = {
+                openapi: "3.0.0",
+                info: {
+                    title: "🎬 Drama Streaming API Documentation",
+                    description: `
+**Selamat datang di Drama Streaming API!**
+
+API ini menyediakan akses ke data drama dari berbagai platform (**DramaBox**, **FlickReels** & **Melolo**).
+
+### 📚 Fitur
+- **DramaBox**: Home, Search, Detail, Episodes, VIP Bypass
+- **FlickReels**: Home, Ranking, Search, Detail, Episodes
+- **Melolo**: Home, Trending, Search, Detail, Episodes, Stream
+- **DramaWave**: Home, ForYou, Trending, Ranking, Search, Detail, Stream (New Provider!)
+- **🆕 Unified Stream**: Direct episode streaming dengan pilihan kualitas
+
+### 🔧 Endpoints Prefix
+- DramaBox: \`/api/dramabox\`
+- FlickReels: \`/api/flickreels\`
+- Melolo: \`/api/melolo\`
+- DramaWave: \`/api/dramawave\`
+- **Stream: \`/api/stream\`** (NEW!)
+
+### 🌐 Multi-Language Support
+Gunakan parameter \`?lang=\` pada endpoint DramaBox untuk memilih bahasa:
+- \`id\` (Indonesia - Default)
+- \`en\` (English)
+- \`zh\` (Chinese)
+- \`ko\` (Korean)
+                    `,
+                    version: "2.3.0",
+                    contact: {
+                        name: "API Developer"
+                    }
+                },
+                servers: [
+                    {
+                        url: "/api",
+                        description: "Main Server"
+                    }
+                ],
+                tags: [
+                    {
+                        name: "Stream",
+                        description: "🆕 Unified Stream API - Direct episode streaming dengan quality selection"
+                    },
+                    {
+                        name: "DramaBox",
+                        description: "DramaBox Platform API"
+                    },
+                    {
+                        name: "FlickReels",
+                        description: "FlickReels Platform API - Supports 11 languages: en, ja, ko, zh-TW, es, id, th, de, pt, fr, ar"
+                    },
+                    {
+                        name: "Melolo",
+                        description: "Melolo Platform API (ByteDance/Worldance) - Supports 14 languages: en, id, th, pt, es, vi, my, km, ms, ja, ko, fr, de, it"
+                    },
+                    {
+                        name: "DramaWave",
+                        description: "DramaWave Platform API"
+                    }
+                ],
+                paths: {
+                    // ==========================================
+                    // 🆕 UNIFIED STREAM ENDPOINTS
+                    // ==========================================
+                    "/stream/{provider}/{dramaId}/{episodeIndex}": {
+                        get: {
+                            tags: ["Stream"],
+                            summary: "🎬 Direct Episode Stream",
+                            description: "Mendapatkan URL streaming langsung untuk episode tertentu dengan pilihan kualitas video. Mendukung DramaBox, FlickReels, Melolo, dan ShortMax.",
+                            parameters: [
+                                { name: "provider", in: "path", required: true, description: "Provider (dramabox, flickreels, melolo, shortmax)", schema: { type: "string", enum: ["dramabox", "flickreels", "melolo", "shortmax"] } },
+                                { name: "dramaId", in: "path", required: true, description: "ID drama", schema: { type: "string" } },
+                                { name: "episodeIndex", in: "path", required: true, description: "Index episode (mulai dari 0)", schema: { type: "integer" } },
+                                { name: "quality", in: "query", description: "Kualitas video", schema: { type: "string", enum: ["1080", "720", "540", "360", "auto"], default: "auto" } },
+                                { name: "lang", in: "query", description: "Bahasa", schema: { type: "string", enum: ["id", "en", "zh", "ko"], default: "id" } },
+                                { name: "dubbing", in: "query", description: "Audio track", schema: { type: "string", enum: ["original", "id", "en", "zh"], default: "original" } }
+                            ],
+                            responses: {
+                                200: { description: "Berhasil - Returns episode dengan selectedStream URL" },
+                                404: { description: "Episode tidak ditemukan" }
+                            }
+                        }
+                    },
+                    "/stream/{provider}/{dramaId}": {
+                        get: {
+                            tags: ["Stream"],
+                            summary: "📺 All Episodes with Stream",
+                            description: "Mendapatkan semua episode dengan URL streaming. Berguna untuk menampilkan daftar episode yang bisa langsung diputar.",
+                            parameters: [
+                                { name: "provider", in: "path", required: true, description: "Provider (dramabox, flickreels, melolo, shortmax)", schema: { type: "string", enum: ["dramabox", "flickreels", "melolo", "shortmax"] } },
+                                { name: "dramaId", in: "path", required: true, description: "ID drama", schema: { type: "string" } },
+                                { name: "quality", in: "query", description: "Kualitas video", schema: { type: "string", enum: ["1080", "720", "540", "360", "auto"], default: "auto" } }
+                            ],
+                            responses: {
+                                200: { description: "Berhasil - Returns array episodes dengan stream URLs" }
+                            }
+                        }
+                    },
+
+                    // ==========================================
+                    // DRAMABOX ENDPOINTS
+                    // ==========================================
+                    "/dramabox/home": {
+                        get: {
+                            tags: ["DramaBox"],
+                            summary: "Home Page",
+                            description: "Halaman Utama",
+                            parameters: [
+                                { name: "page", in: "query", schema: { type: "integer", default: 1 } },
+                                { name: "lang", in: "query", schema: { type: "string", default: "id" } }
+                            ],
+                            responses: { 200: { description: "Berhasil" } }
+                        }
+                    },
+                    "/dramabox/recommend": {
+                        get: {
+                            tags: ["DramaBox"],
+                            summary: "Rekomendasi",
+                            description: "Daftar rekomendasi drama",
+                            parameters: [
+                                { name: "page", in: "query", schema: { type: "integer", default: 1 } },
+                                { name: "lang", in: "query", schema: { type: "string", default: "id" } }
+                            ],
+                            responses: { 200: { description: "Berhasil" } }
+                        }
+                    },
+                    "/dramabox/ranking": {
+                        get: {
+                            tags: ["DramaBox"],
+                            summary: "Ranking",
+                            description: "Daftar ranking drama",
+                            parameters: [
+                                { name: "type", in: "query", description: "Tipe ranking (1: Trending, dll)", schema: { type: "integer", default: 1 } },
+                                { name: "lang", in: "query", schema: { type: "string", default: "id" } }
+                            ],
+                            responses: { 200: { description: "Berhasil" } }
+                        }
+                    },
+                    "/dramabox/trending": {
+                        get: {
+                            tags: ["DramaBox"],
+                            summary: "Trending",
+                            description: "Drama yang sedang trending",
+                            parameters: [
+                                { name: "page", in: "query", schema: { type: "integer", default: 1 } },
+                                { name: "lang", in: "query", schema: { type: "string", default: "id" } }
+                            ],
+                            responses: { 200: { description: "Berhasil" } }
+                        }
+                    },
+                    "/dramabox/latest": {
+                        get: {
+                            tags: ["DramaBox"],
+                            summary: "Latest / Terbaru",
+                            description: "Drama terbaru",
+                            parameters: [
+                                { name: "page", in: "query", schema: { type: "integer", default: 1 } },
+                                { name: "lang", in: "query", schema: { type: "string", default: "id" } }
+                            ],
+                            responses: { 200: { description: "Berhasil" } }
+                        }
+                    },
+                    "/dramabox/foryou": {
+                        get: {
+                            tags: ["DramaBox"],
+                            summary: "For You",
+                            description: "Rekomendasi untukmu",
+                            parameters: [
+                                { name: "page", in: "query", schema: { type: "integer", default: 1 } },
+                                { name: "lang", in: "query", schema: { type: "string", default: "id" } }
+                            ],
+                            responses: { 200: { description: "Berhasil" } }
+                        }
+                    },
+                    "/dramabox/vip": {
+                        get: {
+                            tags: ["DramaBox"],
+                            summary: "VIP Drama",
+                            description: "Drama VIP/Premium",
+                            parameters: [
+                                { name: "page", in: "query", schema: { type: "integer", default: 1 } },
+                                { name: "lang", in: "query", schema: { type: "string", default: "id" } }
+                            ],
+                            responses: { 200: { description: "Berhasil" } }
+                        }
+                    },
+                    "/dramabox/randomdrama": {
+                        get: {
+                            tags: ["DramaBox"],
+                            summary: "Random Drama",
+                            description: "Drama acak",
+                            parameters: [
+                                { name: "lang", in: "query", schema: { type: "string", default: "id" } }
+                            ],
+                            responses: { 200: { description: "Berhasil" } }
+                        }
+                    },
+                    "/dramabox/dubindo": {
+                        get: {
+                            tags: ["DramaBox"],
+                            summary: "Dubbing Indonesia",
+                            description: "Drama dengan dubbing Indonesia",
+                            parameters: [
+                                { name: "classify", in: "query", schema: { type: "string", enum: ["terpopuler", "terbaru"], default: "terpopuler" } },
+                                { name: "page", in: "query", schema: { type: "integer", default: 1 } }
+                            ],
+                            responses: { 200: { description: "Berhasil" } }
+                        }
+                    },
+                    "/dramabox/search": {
+                        get: {
+                            tags: ["DramaBox"],
+                            summary: "Cari Drama",
+                            description: "Pencarian drama",
+                            parameters: [
+                                { name: "q", in: "query", required: true, schema: { type: "string" } },
+                                { name: "lang", in: "query", schema: { type: "string", default: "id" } }
+                            ],
+                            responses: { 200: { description: "Berhasil" } }
+                        }
+                    },
+                    "/dramabox/populersearch": {
+                        get: {
+                            tags: ["DramaBox"],
+                            summary: "Popular Search",
+                            description: "Kata kunci populer",
+                            parameters: [
+                                { name: "lang", in: "query", schema: { type: "string", default: "id" } }
+                            ],
+                            responses: { 200: { description: "Berhasil" } }
+                        }
+                    },
+                    "/dramabox/detail/{bookId}": {
+                        get: {
+                            tags: ["DramaBox"],
+                            summary: "Detail Drama",
+                            description: "Informasi detail drama",
+                            parameters: [
+                                { name: "bookId", in: "path", required: true, schema: { type: "string" } },
+                                { name: "lang", in: "query", schema: { type: "string", default: "id" } }
+                            ],
+                            responses: { 200: { description: "Berhasil" } }
+                        }
+                    },
+                    "/dramabox/allepisode/{bookId}": {
+                        get: {
+                            tags: ["DramaBox"],
+                            summary: "Semua Episode",
+                            description: "Semua episode dengan link streaming (VIP Unlocked)",
+                            parameters: [
+                                { name: "bookId", in: "path", required: true, schema: { type: "string" } }
+                            ],
+                            responses: { 200: { description: "Berhasil" } }
+                        }
+                    },
+                    "/dramabox/genres": {
+                        get: {
+                            tags: ["DramaBox"],
+                            summary: "Genres / Categories",
+                            description: "Daftar kategori/genre drama",
+                            responses: { 200: { description: "Berhasil" } }
+                        }
+                    },
+                    "/dramabox/classify": {
+                        get: {
+                            tags: ["DramaBox"],
+                            summary: "Filter by Genre",
+                            description: "Filter drama berdasarkan genre/kategori",
+                            parameters: [
+                                { name: "genre", in: "query", description: "ID Genre (lihat /genres)", schema: { type: "integer" } },
+                                { name: "sort", in: "query", description: "Urutkan (1: Populer, 2: Terbaru)", schema: { type: "integer", default: 1 } },
+                                { name: "page", in: "query", schema: { type: "integer", default: 1 } },
+                                { name: "lang", in: "query", schema: { type: "string", default: "id" } }
+                            ],
+                            responses: { 200: { description: "Berhasil" } }
+                        }
+                    },
+                    "/dramabox/watch/{bookId}/{episodeIndex}": {
+                        get: {
+                            tags: ["DramaBox"],
+                            summary: "Direct Watch Video",
+                            description: "Dapatkan URL video .mp4 langsung untuk episode tertentu",
+                            parameters: [
+                                { name: "bookId", in: "path", required: true, schema: { type: "string" } },
+                                { name: "episodeIndex", in: "path", required: true, description: "Index episode (mulai dari 0)", schema: { type: "integer" } }
+                            ],
+                            responses: { 200: { description: "Berhasil" } }
+                        }
+                    },
+                    "/dramabox/suggest": {
+                        get: {
+                            tags: ["DramaBox"],
+                            summary: "Search Suggestions",
+                            description: "Saran pencarian real-time",
+                            parameters: [
+                                { name: "q", in: "query", required: true, description: "Kata kunci", schema: { type: "string" } },
+                                { name: "lang", in: "query", schema: { type: "string", default: "id" } }
+                            ],
+                            responses: { 200: { description: "Berhasil" } }
+                        }
+                    },
+
+                    // ==========================================
+                    // FLICKREELS ENDPOINTS
+                    // ==========================================
+                    "/flickreels/languages": {
+                        get: {
+                            tags: ["FlickReels"],
+                            summary: "🌐 Supported Languages",
+                            description: "Daftar bahasa yang didukung FlickReels. Response berisi code, id, name, dan native name.",
+                            responses: {
+                                200: {
+                                    description: "Berhasil",
+                                    content: {
+                                        "application/json": {
+                                            schema: {
+                                                type: "object",
+                                                properties: {
+                                                    count: { type: "integer", example: 11 },
+                                                    default: { type: "string", example: "id" },
+                                                    languages: { type: "array" }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "/flickreels/home": {
+                        get: {
+                            tags: ["FlickReels"],
+                            summary: "Home Page",
+                            description: "Halaman Utama",
+                            parameters: [
+                                { name: "lang", in: "query", description: "Language code (en, ja, ko, zh-TW, es, id, th, de, pt, fr, ar)", schema: { type: "string", default: "id" } }
+                            ],
+                            responses: { 200: { description: "Berhasil" } }
+                        }
+                    },
+                    "/flickreels/foryou": {
+                        get: {
+                            tags: ["FlickReels"],
+                            summary: "For You Feed",
+                            description: "Rekomendasi For You",
+                            parameters: [
+                                { name: "lang", in: "query", description: "Language code", schema: { type: "string", default: "id" } }
+                            ],
+                            responses: { 200: { description: "Berhasil" } }
+                        }
+                    },
+                    "/flickreels/ranking": {
+                        get: {
+                            tags: ["FlickReels"],
+                            summary: "Ranking List",
+                            description: "Daftar Ranking",
+                            parameters: [
+                                { name: "lang", in: "query", description: "Language code", schema: { type: "string", default: "id" } }
+                            ],
+                            responses: { 200: { description: "Berhasil" } }
+                        }
+                    },
+                    "/flickreels/recommend": {
+                        get: {
+                            tags: ["FlickReels"],
+                            summary: "Recommendation",
+                            description: "Rekomendasi",
+                            parameters: [
+                                { name: "lang", in: "query", description: "Language code", schema: { type: "string", default: "id" } }
+                            ],
+                            responses: { 200: { description: "Berhasil" } }
+                        }
+                    },
+                    "/flickreels/search": {
+                        get: {
+                            tags: ["FlickReels"],
+                            summary: "Search Drama",
+                            description: "Pencarian drama",
+                            parameters: [
+                                { name: "q", in: "query", required: true, description: "Kata kunci pencarian", schema: { type: "string" } },
+                                { name: "page", in: "query", description: "Page token", schema: { type: "string" } },
+                                { name: "page_size", in: "query", description: "Items per page", schema: { type: "integer", default: 10 } }
+                            ],
+                            responses: { 200: { description: "Berhasil" } }
+                        }
+                    },
+                    "/flickreels/detail/{playletId}": {
+                        get: {
+                            tags: ["FlickReels"],
+                            summary: "Detail Drama",
+                            description: "Detail Informasi Drama",
+                            parameters: [
+                                { name: "playletId", in: "path", required: true, schema: { type: "string" } }
+                            ],
+                            responses: { 200: { description: "Berhasil" } }
+                        }
+                    },
+                    "/flickreels/episodes/{playletId}": {
+                        get: {
+                            tags: ["FlickReels"],
+                            summary: "Episode List",
+                            description: "Daftar Episode",
+                            parameters: [
+                                { name: "playletId", in: "path", required: true, schema: { type: "string" } }
+                            ],
+                            responses: { 200: { description: "Berhasil" } }
+                        }
+                    },
+
+                    // ==========================================
+                    // MELOLO ENDPOINTS (Simplified - No Token Refresh Needed)
+                    // ==========================================
+                    "/melolo/languages": {
+                        get: {
+                            tags: ["Melolo"],
+                            summary: "🌐 Supported Languages",
+                            description: "Daftar bahasa yang didukung Melolo. Response berisi code, name, native name, region, dan timezone.",
+                            responses: {
+                                200: {
+                                    description: "Berhasil",
+                                    content: {
+                                        "application/json": {
+                                            schema: {
+                                                type: "object",
+                                                properties: {
+                                                    count: { type: "integer", example: 19 },
+                                                    default: { type: "string", example: "id" },
+                                                    languages: { type: "array" },
+                                                    usage: { type: "string" }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "/melolo/home": {
+                        get: {
+                            tags: ["Melolo"],
+                            summary: "Home Page",
+                            description: "Halaman Utama Melolo",
+                            parameters: [
+                                { name: "lang", in: "query", description: "Language code (en, id, th, pt, es, vi, my, km, ms, ja, ko, fr, de, it)", schema: { type: "string", default: "id" } }
+                            ],
+                            responses: { 200: { description: "Berhasil" } }
+                        }
+                    },
+                    "/melolo/foryou": {
+                        get: {
+                            tags: ["Melolo"],
+                            summary: "For You",
+                            description: "Rekomendasi For You",
+                            parameters: [
+                                { name: "lang", in: "query", description: "Language code", schema: { type: "string", default: "id" } }
+                            ],
+                            responses: { 200: { description: "Berhasil" } }
+                        }
+                    },
+                    "/melolo/ranking": {
+                        get: {
+                            tags: ["Melolo"],
+                            summary: "Ranking",
+                            description: "Drama berdasarkan ranking",
+                            parameters: [
+                                { name: "lang", in: "query", description: "Language code", schema: { type: "string", default: "id" } }
+                            ],
+                            responses: { 200: { description: "Berhasil" } }
+                        }
+                    },
+                    "/melolo/trending": {
+                        get: {
+                            tags: ["Melolo"],
+                            summary: "Trending",
+                            description: "Drama yang sedang trending",
+                            parameters: [
+                                { name: "lang", in: "query", description: "Language code", schema: { type: "string", default: "id" } }
+                            ],
+                            responses: { 200: { description: "Berhasil" } }
+                        }
+                    },
+                    "/melolo/latest": {
+                        get: {
+                            tags: ["Melolo"],
+                            summary: "Latest",
+                            description: "Drama terbaru",
+                            parameters: [
+                                { name: "lang", in: "query", description: "Language code", schema: { type: "string", default: "id" } }
+                            ],
+                            responses: { 200: { description: "Berhasil" } }
+                        }
+                    },
+                    "/melolo/categories": {
+                        get: {
+                            tags: ["Melolo"],
+                            summary: "Categories",
+                            description: "Daftar kategori drama (Romance, Billionaire, dll)",
+                            responses: { 200: { description: "Berhasil" } }
+                        }
+                    },
+                    "/melolo/search": {
+                        get: {
+                            tags: ["Melolo"],
+                            summary: "Cari Drama",
+                            description: "Mencari drama berdasarkan kata kunci",
+                            parameters: [
+                                { name: "q", in: "query", required: true, description: "Kata kunci pencarian (contoh: love)", schema: { type: "string" } }
+                            ],
+                            responses: { 200: { description: "Berhasil" } }
+                        }
+                    },
+                    "/melolo/search/popular": {
+                        get: {
+                            tags: ["Melolo"],
+                            summary: "Popular Search",
+                            description: "Kata kunci pencarian populer",
+                            responses: { 200: { description: "Berhasil" } }
+                        }
+                    },
+                    "/melolo/search/suggestions": {
+                        get: {
+                            tags: ["Melolo"],
+                            summary: "Search Suggestions",
+                            description: "Saran pencarian real-time",
+                            parameters: [
+                                { name: "q", in: "query", required: true, description: "Kata kunci", schema: { type: "string" } }
+                            ],
+                            responses: { 200: { description: "Berhasil" } }
+                        }
+                    },
+                    "/melolo/detail/{bookId}": {
+                        get: {
+                            tags: ["Melolo"],
+                            summary: "Detail Drama",
+                            description: "Mengambil detail drama. Response berisi video_list dengan vid untuk streaming.",
+                            parameters: [
+                                { name: "bookId", in: "path", required: true, description: "ID drama (contoh: 7583531888644459525)", schema: { type: "string" } }
+                            ],
+                            responses: { 200: { description: "Berhasil" } }
+                        }
+                    },
+                    "/melolo/directory/{bookId}": {
+                        get: {
+                            tags: ["Melolo"],
+                            summary: "Directory / Episode List",
+                            description: "Daftar episode dengan item_id untuk setiap episode",
+                            parameters: [
+                                { name: "bookId", in: "path", required: true, description: "ID drama", schema: { type: "string" } }
+                            ],
+                            responses: { 200: { description: "Berhasil" } }
+                        }
+                    },
+                    "/melolo/episodes/{seriesId}": {
+                        get: {
+                            tags: ["Melolo"],
+                            summary: "Episodes with Video",
+                            description: "Daftar episode dengan video URL (jika tersedia)",
+                            parameters: [
+                                { name: "seriesId", in: "path", required: true, description: "ID series/drama", schema: { type: "string" } }
+                            ],
+                            responses: { 200: { description: "Berhasil" } }
+                        }
+                    },
+                    "/melolo/stream": {
+                        get: {
+                            tags: ["Melolo"],
+                            summary: "🎬 Stream Video (Recommended)",
+                            description: "Mendapatkan URL streaming video. Proxied ke Sansekai API untuk reliabilitas.",
+                            parameters: [
+                                { name: "videoId", in: "query", required: true, description: "Video ID (vid dari detail response, contoh: 7583564321033030661)", schema: { type: "string" } }
+                            ],
+                            responses: { 200: { description: "Berhasil - Returns main_url, backup_url, expire_time" } }
+                        }
+                    },
+
+                    // ==========================================
+                    // DRAMAWAVE ENDPOINTS
+                    // ==========================================
+                    "/dramawave/home": {
+                        get: {
+                            tags: ["DramaWave"],
+                            summary: "Home Page",
+                            description: "Get home feed with sections",
+                            responses: { 200: { description: "Success" } }
+                        }
+                    },
+                    "/dramawave/foryou": {
+                        get: {
+                            tags: ["DramaWave"],
+                            summary: "For You Feed",
+                            description: "Get personalized recommendations",
+                            parameters: [
+                                { name: "page", in: "query", schema: { type: "integer", default: 1 } },
+                                { name: "limit", in: "query", schema: { type: "integer", default: 20 } }
+                            ],
+                            responses: { 200: { description: "Success" } }
+                        }
+                    },
+                    "/dramawave/trending": {
+                        get: {
+                            tags: ["DramaWave"],
+                            summary: "Trending Dramas",
+                            description: "Get trending/hot dramas",
+                            parameters: [
+                                { name: "page", in: "query", schema: { type: "integer", default: 1 } },
+                                { name: "limit", in: "query", schema: { type: "integer", default: 20 } }
+                            ],
+                            responses: { 200: { description: "Success" } }
+                        }
+                    },
+                    "/dramawave/ranking": {
+                        get: {
+                            tags: ["DramaWave"],
+                            summary: "Ranking List",
+                            description: "Get ranking list",
+                            parameters: [
+                                { name: "page", in: "query", schema: { type: "integer", default: 1 } },
+                                { name: "limit", in: "query", schema: { type: "integer", default: 20 } }
+                            ],
+                            responses: { 200: { description: "Success" } }
+                        }
+                    },
+                    "/dramawave/search": {
+                        get: {
+                            tags: ["DramaWave"],
+                            summary: "Search",
+                            description: "Search dramas by keyword",
+                            parameters: [
+                                { name: "q", in: "query", required: true, description: "Keyword", schema: { type: "string" } },
+                                { name: "page", in: "query", schema: { type: "integer", default: 1 } },
+                                { name: "limit", in: "query", schema: { type: "integer", default: 20 } }
+                            ],
+                            responses: { 200: { description: "Success" } }
+                        }
+                    },
+                    "/dramawave/detail/{id}": {
+                        get: {
+                            tags: ["DramaWave"],
+                            summary: "Drama Detail",
+                            description: "Get drama details by ID",
+                            parameters: [
+                                { name: "id", in: "path", required: true, description: "Drama ID", schema: { type: "string" } }
+                            ],
+                            responses: { 200: { description: "Success" } }
+                        }
+                    },
+                    "/dramawave/episodes/{id}": {
+                        get: {
+                            tags: ["DramaWave"],
+                            summary: "Episode List",
+                            description: "Get episode list for a series",
+                            parameters: [
+                                { name: "id", in: "path", required: true, description: "Series ID (Numeric ID suggested from foryou)", schema: { type: "string" } },
+                                { name: "page", in: "query", schema: { type: "integer", default: 1 } },
+                                { name: "limit", in: "query", schema: { type: "integer", default: 100 } }
+                            ],
+                            responses: { 200: { description: "Success" } }
+                        }
+                    },
+                    "/dramawave/stream/{episodeId}": {
+                        get: {
+                            tags: ["DramaWave"],
+                            summary: "Stream Video",
+                            description: "Get video stream URL for an episode",
+                            parameters: [
+                                { name: "episodeId", in: "path", required: true, description: "Episode ID", schema: { type: "string" } }
+                            ],
+                            responses: { 200: { description: "Success" } }
+                        }
+                    },
+                    "/dramawave/login": {
+                        post: {
+                            tags: ["DramaWave"],
+                            summary: "Login",
+                            description: "Perform anonymous login",
+                            responses: { 200: { description: "Success" } }
+                        }
+                    },
+                    // NEW CATEGORY FEED ENDPOINTS
+                    "/dramawave/new": {
+                        get: {
+                            tags: ["DramaWave"],
+                            summary: "🆕 New Releases",
+                            description: "Get new drama releases",
+                            parameters: [
+                                { name: "page", in: "query", schema: { type: "integer", default: 1 } },
+                                { name: "limit", in: "query", schema: { type: "integer", default: 20 } }
+                            ],
+                            responses: { 200: { description: "Success" } }
+                        }
+                    },
+                    "/dramawave/free": {
+                        get: {
+                            tags: ["DramaWave"],
+                            summary: "🆓 Free Dramas",
+                            description: "Get free (non-VIP) dramas",
+                            parameters: [
+                                { name: "page", in: "query", schema: { type: "integer", default: 1 } },
+                                { name: "limit", in: "query", schema: { type: "integer", default: 20 } }
+                            ],
+                            responses: { 200: { description: "Success" } }
+                        }
+                    },
+                    "/dramawave/vip": {
+                        get: {
+                            tags: ["DramaWave"],
+                            summary: "👑 VIP Content",
+                            description: "Get VIP exclusive dramas",
+                            parameters: [
+                                { name: "page", in: "query", schema: { type: "integer", default: 1 } },
+                                { name: "limit", in: "query", schema: { type: "integer", default: 20 } }
+                            ],
+                            responses: { 200: { description: "Success" } }
+                        }
+                    },
+                    "/dramawave/dubbing": {
+                        get: {
+                            tags: ["DramaWave"],
+                            summary: "🎙️ Dubbed Dramas",
+                            description: "Get dramas with voice dubbing (Sulih Suara)",
+                            parameters: [
+                                { name: "page", in: "query", schema: { type: "integer", default: 1 } },
+                                { name: "limit", in: "query", schema: { type: "integer", default: 20 } }
+                            ],
+                            responses: { 200: { description: "Success" } }
+                        }
+                    },
+                    "/dramawave/male": {
+                        get: {
+                            tags: ["DramaWave"],
+                            summary: "👨 Male Audience",
+                            description: "Get dramas for male audience (action-oriented)",
+                            parameters: [
+                                { name: "page", in: "query", schema: { type: "integer", default: 1 } },
+                                { name: "limit", in: "query", schema: { type: "integer", default: 20 } }
+                            ],
+                            responses: { 200: { description: "Success" } }
+                        }
+                    },
+                    "/dramawave/female": {
+                        get: {
+                            tags: ["DramaWave"],
+                            summary: "👩 Female Audience",
+                            description: "Get dramas for female audience (romance-oriented)",
+                            parameters: [
+                                { name: "page", in: "query", schema: { type: "integer", default: 1 } },
+                                { name: "limit", in: "query", schema: { type: "integer", default: 20 } }
+                            ],
+                            responses: { 200: { description: "Success" } }
+                        }
+                    },
+                    "/dramawave/coming-soon": {
+                        get: {
+                            tags: ["DramaWave"],
+                            summary: "🔜 Coming Soon",
+                            description: "Get upcoming drama releases",
+                            parameters: [
+                                { name: "page", in: "query", schema: { type: "integer", default: 1 } },
+                                { name: "limit", in: "query", schema: { type: "integer", default: 20 } }
+                            ],
+                            responses: { 200: { description: "Success" } }
+                        }
+                    },
+                    "/dramawave/search/hot": {
+                        get: {
+                            tags: ["DramaWave"],
+                            summary: "🔥 Hot Keywords",
+                            description: "Get trending search keywords",
+                            responses: { 200: { description: "Success - Returns array of trending keywords" } }
+                        }
+                    },
+                    "/dramawave/dramas/{id}/play/{episode}": {
+                        get: {
+                            tags: ["DramaWave"],
+                            summary: "▶️ Play Episode",
+                            description: "Play episode by index (1-based)",
+                            parameters: [
+                                { name: "id", in: "path", required: true, description: "Drama ID", schema: { type: "string" } },
+                                { name: "episode", in: "path", required: true, description: "Episode number (1-based)", schema: { type: "integer" } }
+                            ],
+                            responses: { 200: { description: "Success - Returns video URL" } }
+                        }
+                    }
+                },
+                components: {
+                    schemas: {
+                        SuccessResponse: {
+                            type: "object",
+                            properties: {
+                                success: { type: "boolean", example: true },
+                                message: { type: "string", example: "Berhasil" },
+                                data: { type: "object" }
+                            }
+                        }
+                    }
+                }
+            };
+
+            // Initialize Swagger UI
+            const ui = SwaggerUIBundle({
+                spec: spec,
+                dom_id: '#swagger-ui',
+                deepLinking: true,
+                presets: [
+                    SwaggerUIBundle.presets.apis,
+                    SwaggerUIStandalonePreset
+                ],
+                plugins: [
+                    SwaggerUIBundle.plugins.DownloadUrl
+                ],
+                layout: "BaseLayout",
+                defaultModelsExpandDepth: 0,
+                docExpansion: "list"
+            });
+
+            window.ui = ui;
+        };
+    </script>
+</body>
+
+</html>

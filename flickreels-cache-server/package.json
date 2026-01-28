@@ -1,0 +1,13 @@
+{
+    "name": "flickreels-cache-server",
+    "version": "1.0.0",
+    "description": "FlickReels Caching Server with Upstash Redis",
+    "type": "module",
+    "scripts": {
+        "dev": "node api/test.js"
+    },
+    "dependencies": {
+        "@upstash/redis": "^1.28.0",
+        "axios": "^1.6.0"
+    }
+}

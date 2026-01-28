@@ -1,0 +1,32 @@
+# Large development files - DO NOT UPLOAD
+decompiled/
+decompiled-premium/
+loklok-decompiled/
+loklok-premium-decompiled/
+extracted/
+extracted_full/
+temp/
+rootAVD/
+
+# APK and binaries
+*.apk
+frida-server
+frida-server-*
+
+# Development scripts
+frida_*.js
+ssl_bypass.js
+test-*.js
+
+# Cache files
+tokenCache.json
+credentials.json
+*.log
+
+# Node modules (Vercel installs fresh)
+node_modules/
+
+# Other
+.DS_Store
+.env
+.env.local

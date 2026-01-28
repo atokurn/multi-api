@@ -1,0 +1,39 @@
+{
+    "version": 2,
+    "builds": [
+        {
+            "src": "api/**/*.js",
+            "use": "@vercel/node"
+        }
+    ],
+    "routes": [
+        {
+            "src": "/api/episodes/(.*)",
+            "dest": "/api/episodes.js"
+        },
+        {
+            "src": "/api/watch/(.*)/(.*)",
+            "dest": "/api/watch.js"
+        },
+        {
+            "src": "/api/detail/(.*)",
+            "dest": "/api/detail.js"
+        },
+        {
+            "src": "/api/unlock",
+            "dest": "/api/unlock.js"
+        },
+        {
+            "src": "/api/cache/refresh",
+            "dest": "/api/refresh.js"
+        },
+        {
+            "src": "/api/health",
+            "dest": "/api/health.js"
+        },
+        {
+            "src": "/",
+            "dest": "/api/health.js"
+        }
+    ]
+}

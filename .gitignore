@@ -1,0 +1,63 @@
+# Dependencies
+node_modules/
+
+# Environment variables
+.env
+.env.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# ============================================
+# DEVELOPMENT/REVERSE ENGINEERING FILES
+# (Not needed for production deployment)
+# ============================================
+
+# Decompiled APK (large, not needed)
+decompiled/
+extracted/
+extracted_full/
+
+# APK file (150MB, not needed)
+*.apk
+
+# Frida server binary (56MB)
+frida-server
+frida-server-*
+
+# RootAVD tools
+rootAVD/
+
+# Frida scripts (dev only)
+frida_*.js
+ssl_bypass.js
+
+# Temporary development files
+temp/
+
+# Token cache (will be regenerated)
+tokenCache.json
+credentials.json
+
+# Test files
+test-*.js
+
+# ============================================
+# KEEP FOR DEPLOYMENT
+# ============================================
+# index.js
+# src/
+# public/
+# package.json
+# vercel.json
+# README.md
+.vercel

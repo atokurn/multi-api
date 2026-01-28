@@ -1,0 +1,5 @@
+flask==2.3.3
+pycryptodome==3.19.1
+protobuf==4.25.1
+requests==2.31.0
+werkzeug==2.3.7
