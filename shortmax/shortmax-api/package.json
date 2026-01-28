@@ -1,0 +1,20 @@
+{
+    "name": "shortmax-api",
+    "version": "1.0.0",
+    "description": "ShortMax API - Standalone service",
+    "main": "index.js",
+    "type": "module",
+    "scripts": {
+        "start": "node index.js",
+        "dev": "node --watch index.js"
+    },
+    "dependencies": {
+        "axios": "^1.6.0",
+        "cors": "^2.8.5",
+        "dotenv": "^16.3.1",
+        "express": "^4.18.2",
+        "https-proxy-agent": "^7.0.6",
+        "socks-proxy-agent": "^8.0.5",
+        "uuid": "^9.0.1"
+    }
+}
