@@ -100,11 +100,11 @@ async function getCategoryList() {
 /**
  * Search for dramas/series
  */
-async function search(keyword, cursor = '') {
+async function search(keyword, cursor = '', lang = 'id') {
     const response = await meloloClient.get('/i18n_novel/search/page/v1/', {
-        keyword: keyword,
+        query: keyword,
         cursor: cursor
-    });
+    }, lang);
     return response;
 }
 
