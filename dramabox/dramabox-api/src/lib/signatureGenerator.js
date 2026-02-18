@@ -3,7 +3,7 @@
  * DramaBox Signature Generator (VERIFIED)
  * ========================================
  * 
- * Reverse engineered from DramaBox APK v5.1.1
+ * Reverse engineered from DramaBox APK v5.4.1
  * Verified against live captured traffic - signatures MATCH!
  * 
  * Signature Algorithm: SHA256WithRSA

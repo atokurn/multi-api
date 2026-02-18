@@ -12,7 +12,7 @@
  * - Token refresh on 401
  * - Error handling
  * 
- * Headers reverse-engineered from DramaBox v5.1.1 via HTTP Toolkit
+ * Headers reverse-engineered from DramaBox v5.4.1 via HTTP Toolkit
  */
 
 import { getCredentials, buildTnHeader, extractUserId } from './credentialsManager.js';
@@ -29,10 +29,10 @@ if (CF_PROXY_URL) {
     console.log('[DramaBoxClient] Using Cloudflare Worker proxy:', CF_PROXY_URL);
 }
 
-// App configuration (from DramaBox v5.1.1)
+// App configuration (from DramaBox v5.4.1)
 const APP_CONFIG = {
-    version: '511',           // Version code for v5.1.1
-    versionName: '5.1.1',
+    version: '541',           // Version code for v5.4.1
+    versionName: '5.4.1',
     packageName: 'com.storymatrix.drama',
     platform: '53',           // Platform code
     channelId: 'DAUAG1050223',

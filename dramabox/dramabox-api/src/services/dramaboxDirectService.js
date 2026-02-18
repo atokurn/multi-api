@@ -627,9 +627,42 @@ export const getAllEpisodesWithVideo = async (bookId) => {
         consecutiveEmpty = 0;
 
         // Process each chapter with VIP bypass
-        const processedChapters = chapterList.map(chapter => {
-            const cdn = chapter.cdnList?.find(c => c.isDefault === 1) || chapter.cdnList?.[0];
-            const videoPathList = cdn?.videoPathList || [];
+        // Process each chapter with VIP bypass
+        const processedChapters = [];
+        for (const chapter of chapterList) {
+            let cdn = chapter.cdnList?.find(c => c.isDefault === 1) || chapter.cdnList?.[0];
+            let videoPathList = cdn?.videoPathList || [];
+
+            // RETRY LOGIC FOR EMPTY VIDEO URL
+            if (videoPathList.length === 0) {
+                console.log(`[getAllEpisodesWithVideo] Empty video list for episode ${chapter.chapterId}. Retrying single fetch...`);
+                try {
+                    // Slight delay before retry
+                    await delay(500);
+                    const singleChapterData = await post('/drama-box/chapterv2/batch/load', {
+                        boundaryIndex: 0,
+                        comingPlaySectionId: -1,
+                        index: chapter.chapterIndex,
+                        currencyPlaySource: 'discover_new_rec_new',
+                        preLoad: false,
+                        loadDirection: 0,
+                        bookId
+                    });
+
+                    const singleChapter = singleChapterData?.data?.chapterList?.[0];
+                    if (singleChapter) {
+                        cdn = singleChapter.cdnList?.find(c => c.isDefault === 1) || singleChapter.cdnList?.[0];
+                        videoPathList = cdn?.videoPathList || [];
+                        if (videoPathList.length > 0) {
+                            console.log(`[getAllEpisodesWithVideo] Retry success for episode ${chapter.chapterId}`);
+                        } else {
+                            console.warn(`[getAllEpisodesWithVideo] Retry failed for episode ${chapter.chapterId}: Still no video path`);
+                        }
+                    }
+                } catch (e) {
+                    console.error(`[getAllEpisodesWithVideo] Retry error for episode ${chapter.chapterId}:`, e.message);
+                }
+            }
 
             const video = videoPathList.find(v => v.quality === 720)
                 || videoPathList.find(v => v.quality === 540)
@@ -642,7 +675,7 @@ export const getAllEpisodesWithVideo = async (bookId) => {
                 isVipEquity: v.isVipEquity
             }));
 
-            return {
+            processedChapters.push({
                 chapterId: chapter.chapterId,
                 chapterName: chapter.chapterName,
                 chapterIndex: chapter.chapterIndex,
@@ -654,8 +687,8 @@ export const getAllEpisodesWithVideo = async (bookId) => {
                 allQualities: availableQualities,
                 duration: chapter.duration,
                 _originalIsVip: chapter.isVip
-            };
-        });
+            });
+        }
 
         allEpisodes = allEpisodes.concat(processedChapters);
 
