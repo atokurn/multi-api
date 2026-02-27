@@ -8,6 +8,7 @@
  * - Auto-fetch fresh tokens from external service
  * - Token caching with TTL
  * - Automatic refresh when expired
+ * - Credential Pool for Rate Limit Avoidance
  */
 
 import crypto from 'crypto';
@@ -18,9 +19,10 @@ const TOKEN_SERVICE_URL = process.env.TOKEN_SERVICE_URL || 'https://dramabox-tok
 // Token cache TTL (4 hours - tokens usually expire after several hours)
 const TOKEN_TTL_MS = 4 * 60 * 60 * 1000;
 
-// In-memory cache for credentials
-let cachedCredentials = null;
-let cacheTimestamp = 0;
+// Credential Pool
+const POOL_SIZE = 5;
+const credentialPool = new Array(POOL_SIZE).fill(null);
+let currentPoolIndex = 0;
 
 /**
  * Fetch fresh token from external token service
@@ -65,10 +67,6 @@ export const fetchFreshToken = async () => {
             fetchedAt: Date.now()
         };
 
-        // Update cache
-        cachedCredentials = credentials;
-        cacheTimestamp = Date.now();
-
         console.log('[CredentialsManager] ✅ Fresh token obtained, userId:', userId);
         return credentials;
 
@@ -79,47 +77,91 @@ export const fetchFreshToken = async () => {
 };
 
 /**
- * Check if cached credentials are still valid
+ * Check if a specific credential set is valid
  */
-const isCacheValid = () => {
-    if (!cachedCredentials) return false;
-    return (Date.now() - cacheTimestamp) < TOKEN_TTL_MS;
+const isCredentialValid = (cred) => {
+    if (!cred) return false;
+    return (Date.now() - cred.fetchedAt) < TOKEN_TTL_MS;
 };
 
 /**
- * Get credentials, auto-fetching fresh token if expired
+ * Get credentials, auto-fetching if expired or missing
+ * Supporting credential pool for rate-limit avoidance
+ * 
+ * @param {number} forceIndex - Optional: force use specific pool index
  */
-export const getCredentials = async () => {
+export const getCredentials = async (forceIndex = null) => {
+    const index = forceIndex !== null ? forceIndex : currentPoolIndex;
+
     // Return cached if valid
-    if (isCacheValid()) {
-        console.log('[CredentialsManager] Using cached credentials');
-        return cachedCredentials;
+    if (isCredentialValid(credentialPool[index])) {
+        // console.log(`[CredentialsManager] Using cached credentials (Pool ${index})`);
+        return credentialPool[index];
     }
+
+    console.log(`[CredentialsManager] Pool ${index} expired/empty. Fetching fresh...`);
 
     // Fetch fresh token
     try {
-        return await fetchFreshToken();
+        const newCred = await fetchFreshToken();
+        credentialPool[index] = newCred;
+        return newCred;
     } catch (error) {
-        // If fetch fails and we have cached credentials, use them anyway
-        if (cachedCredentials) {
-            console.log('[CredentialsManager] Using stale cached credentials');
-            return cachedCredentials;
+        // If fetch fails and we have stale credentials, use them
+        if (credentialPool[index]) {
+            console.log(`[CredentialsManager] Using stale cached credentials (Pool ${index})`);
+            return credentialPool[index];
         }
 
-        // Last resort: return fallback credentials
+        // Last resort: fallback
         console.log('[CredentialsManager] Using fallback credentials');
         return getFallbackCredentials();
     }
 };
 
 /**
- * Force refresh credentials (call this when API returns error 12)
+ * Rotate to the next credential in the pool
+ * Used when current credential is rate-limited
+ */
+export const rotateCredentials = async () => {
+    const oldIndex = currentPoolIndex;
+    currentPoolIndex = (currentPoolIndex + 1) % POOL_SIZE;
+    console.log(`[CredentialsManager] 🔄 Rotating credentials from Pool ${oldIndex} to Pool ${currentPoolIndex}`);
+
+    // Ensure the new slot has valid credentials
+    return await getCredentials();
+};
+
+/**
+ * Force refresh specific credential (e.g. if token expired)
  */
 export const refreshCredentials = async () => {
-    console.log('[CredentialsManager] Force refreshing credentials...');
-    cachedCredentials = null;
-    cacheTimestamp = 0;
-    return await fetchFreshToken();
+    console.log(`[CredentialsManager] Force refreshing credentials for Pool ${currentPoolIndex}...`);
+    credentialPool[currentPoolIndex] = null;
+    const newCred = await fetchFreshToken();
+    credentialPool[currentPoolIndex] = newCred;
+    return newCred;
+};
+
+/**
+ * Initialize the credential pool (pre-fill)
+ */
+export const initializePool = async () => {
+    console.log('[CredentialsManager] Initializing credential pool...');
+    // We don't fetch all at once to avoid hammering the token service
+    // Just ensure the first one is ready
+    await getCredentials(0);
+    // Pre-warm additional slots in background
+    setTimeout(async () => {
+        try { await getCredentials(1); } catch (e) { 
+            console.warn('[CredentialsManager] Pre-warm slot 1 failed:', e.message); 
+        }
+    }, 2000);
+    setTimeout(async () => {
+        try { await getCredentials(2); } catch (e) { 
+            console.warn('[CredentialsManager] Pre-warm slot 2 failed:', e.message); 
+        }
+    }, 4000);
 };
 
 /**
@@ -133,7 +175,8 @@ const getFallbackCredentials = () => {
         userId: '376454102',
         afid: `${Date.now()}-${Math.floor(Math.random() * 10000000000000000)}`,
         ins: Date.now().toString(),
-        instanceId: 'fcc86839afe24f5a8aefb3f8508814b5'
+        instanceId: 'fcc86839afe24f5a8aefb3f8508814b5',
+        fetchedAt: Date.now() // Mock timestamp
     };
 };
 
@@ -181,6 +224,8 @@ export const generateNewCredentials = () => {
 export default {
     getCredentials,
     refreshCredentials,
+    rotateCredentials,
+    initializePool,
     fetchFreshToken,
     generateNewCredentials,
     buildTnHeader,

@@ -13,7 +13,11 @@
  * - 'ko' (Korean)
  */
 
-import { post } from '../lib/dramaboxClient.js';
+import { post, get, rotateCredentials } from '../lib/dramaboxClient.js';
+
+// In-memory cache for episode lists
+const episodeCache = new Map();
+const CACHE_TTL = 15 * 60 * 1000; // 15 minutes
 
 // Default language
 const DEFAULT_LANG = 'id';
@@ -555,157 +559,231 @@ export const getEpisodes = async (bookId, episodeIndex = 1) => {
 /**
  * Get ALL episodes with video URLs using pagination
  * VIP BYPASS ENABLED - All episodes returned as unlocked
+ * Features: Rate-limit detection, Credential Rotation, Caching
  * 
  * @param {string} bookId - Drama ID
  * @returns {Array} All episodes with streaming URLs
  */
 export const getAllEpisodesWithVideo = async (bookId) => {
+    // 1. Check Cache
+    const cached = episodeCache.get(bookId);
+    if (cached && (Date.now() - cached.timestamp < CACHE_TTL)) {
+        console.log(`[getAllEpisodesWithVideo] Returning cached episodes for ${bookId}`);
+        return cached.data;
+    }
+
     let allEpisodes = [];
     let currentIndex = 1;
     const BATCH_SIZE = 6;
     let maxIterations = 30; // Safety limit for ~180 episodes max
     let consecutiveEmpty = 0;
-    let retryCount = 0;
-    const MAX_RETRIES = 3;
+
+    // Rate limit handling
+    let credentialRotationCount = 0;
+    const MAX_ROTATIONS = 3;
+    let baseDelay = 1000; // Increased base delay to 1000ms to reduce rate limiting risk
 
     // Helper function for delay
     const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-    while (maxIterations > 0) {
-        let data;
-
+    // Outer loop for credential rotation retries
+    while (credentialRotationCount <= MAX_ROTATIONS) {
         try {
-            data = await post('/drama-box/chapterv2/batch/load', {
-                boundaryIndex: 0,
-                comingPlaySectionId: -1,
-                index: currentIndex,
-                currencyPlaySource: 'discover_new_rec_new',
-                needEndRecommend: 0,
-                currencyPlaySourceName: '',
-                preLoad: false,
-                rid: '',
-                pullCid: '',
-                loadDirection: 1, // Forward direction
-                startUpKey: '',
-                bookId
-            });
-        } catch (error) {
-            console.error(`[getAllEpisodesWithVideo] Error at index ${currentIndex}:`, error.message);
-
-            // If it's an HTML error page (rate limiting), retry with exponential backoff
-            if (error.message.includes('HTML error page') && retryCount < MAX_RETRIES) {
-                retryCount++;
-                const backoffDelay = 1000 * retryCount; // 1s, 2s, 3s
-                console.log(`[getAllEpisodesWithVideo] Retrying in ${backoffDelay}ms (attempt ${retryCount}/${MAX_RETRIES})`);
-                await delay(backoffDelay);
-                continue;
+            // Reset for new attempt if we rotated
+            if (credentialRotationCount > 0 && allEpisodes.length === 0) {
+                currentIndex = 1;
+                maxIterations = 30;
+                consecutiveEmpty = 0;
             }
 
-            // If we have some episodes already, return what we got
+            while (maxIterations > 0) {
+                let data;
+
+                try {
+                    data = await post('/drama-box/chapterv2/batch/load', {
+                        boundaryIndex: 0,
+                        comingPlaySectionId: -1,
+                        index: currentIndex,
+                        currencyPlaySource: 'discover_new_rec_new',
+                        needEndRecommend: 0,
+                        currencyPlaySourceName: '',
+                        preLoad: false,
+                        rid: '',
+                        pullCid: '',
+                        loadDirection: 1, // Forward direction
+                        startUpKey: '',
+                        bookId
+                    });
+                } catch (error) {
+                    console.error(`[getAllEpisodesWithVideo] Error at index ${currentIndex}:`, error.message);
+
+                    // If HTML error (rate limit), rotate credentials immediately
+                    if (error.message.includes('HTML error page')) {
+                        console.warn(`[getAllEpisodesWithVideo] HTML error detected. Rotating credentials...`);
+                        await rotateCredentials();
+                        credentialRotationCount++;
+                        // Break inner loop to restart with new credentials
+                        break;
+                    }
+                    throw error;
+                }
+
+                const chapterList = data?.data?.chapterList || [];
+
+                // RATE LIMIT DETECTION:
+                // If the VERY FIRST batch is empty, we are likely rate-limited
+                if (currentIndex === 1 && chapterList.length === 0) {
+                    // Check if we already retried max times
+                    if (credentialRotationCount >= MAX_ROTATIONS) {
+                        console.warn('[getAllEpisodesWithVideo] Max credential rotations reached. Giving up.');
+                        break;
+                    }
+
+                    console.warn(`[getAllEpisodesWithVideo] Empty first batch. Likely rate-limited. Rotating credentials (attempt ${credentialRotationCount + 1}/${MAX_ROTATIONS})...`);
+
+                    await rotateCredentials();
+                    credentialRotationCount++;
+                    await delay(2000 * credentialRotationCount); // Wait with exponential backoff before retry
+                    break; // Break inner loop to restart outer loop
+                }
+
+                if (chapterList.length === 0) {
+                    consecutiveEmpty++;
+                    if (consecutiveEmpty >= 2) break; // Stop after 2 empty batches
+                    currentIndex += BATCH_SIZE;
+                    maxIterations--;
+                    continue;
+                }
+
+                consecutiveEmpty = 0;
+
+                // Process chapters (VIP bypass + Retry Logic)
+                const processedChapters = [];
+                for (const chapter of chapterList) {
+                    let cdn = chapter.cdnList?.find(c => c.isDefault === 1) || chapter.cdnList?.[0];
+                    let videoPathList = cdn?.videoPathList || [];
+
+                    // RETRY LOGIC FOR EMPTY VIDEO URL
+                    const MAX_VIDEO_RETRIES = 3;
+                    if (videoPathList.length === 0) {
+                        console.log(`[getAllEpisodesWithVideo] Empty video list for episode ${chapter.chapterId}. Retrying...`);
+                        for (let retryAttempt = 1; retryAttempt <= MAX_VIDEO_RETRIES; retryAttempt++) {
+                            try {
+                                await delay(500 * retryAttempt); // Exponential backoff
+                                const singleChapterData = await post('/drama-box/chapterv2/batch/load', {
+                                    boundaryIndex: 0,
+                                    comingPlaySectionId: -1,
+                                    index: chapter.chapterIndex,
+                                    currencyPlaySource: 'discover_new_rec_new',
+                                    preLoad: false,
+                                    loadDirection: 0,
+                                    bookId
+                                });
+
+                                const singleChapter = singleChapterData?.data?.chapterList?.[0];
+                                if (singleChapter) {
+                                    cdn = singleChapter.cdnList?.find(c => c.isDefault === 1) || singleChapter.cdnList?.[0];
+                                    videoPathList = cdn?.videoPathList || [];
+                                    if (videoPathList.length > 0) {
+                                        console.log(`[getAllEpisodesWithVideo] Retry ${retryAttempt} succeeded for episode ${chapter.chapterId}`);
+                                        break;
+                                    }
+                                }
+                            } catch (e) {
+                                console.error(`[getAllEpisodesWithVideo] Retry error for episode ${chapter.chapterId}:`, e.message);
+                            }
+                        }
+                        if (videoPathList.length === 0) {
+                            console.warn(`[getAllEpisodesWithVideo] All retries failed for episode ${chapter.chapterId}`);
+                        }
+                    }
+
+                    const video = videoPathList.find(v => v.quality === 720)
+                        || videoPathList.find(v => v.quality === 540)
+                        || videoPathList.find(v => v.quality === 480)
+                        || videoPathList[0];
+
+                    const availableQualities = videoPathList.map(v => ({
+                        quality: v.quality,
+                        url: v.videoPath,
+                        isVipEquity: v.isVipEquity
+                    }));
+
+                    processedChapters.push({
+                        chapterId: chapter.chapterId,
+                        chapterName: chapter.chapterName,
+                        chapterIndex: chapter.chapterIndex,
+                        chapterImg: chapter.chapterImg,
+                        isVip: false,
+                        isLocked: false,
+                        quality: video?.quality,
+                        videoUrl: video?.videoPath,
+                        hasVideo: !!video?.videoPath,
+                        allQualities: availableQualities,
+                        duration: chapter.duration,
+                        _originalIsVip: chapter.isVip
+                    });
+                }
+
+                allEpisodes = allEpisodes.concat(processedChapters);
+
+                // Check if we have enough episodes
+                if (chapterList.length < BATCH_SIZE) {
+                    break;
+                }
+
+                currentIndex += BATCH_SIZE;
+                maxIterations--;
+
+                // Adaptive Throttling: Increase delay if we suspect load
+                const jitter = Math.floor(Math.random() * 300); // Random 0-300ms jitter
+                const currentDelay = credentialRotationCount > 0 
+                    ? baseDelay * Math.pow(1.5, credentialRotationCount) + jitter 
+                    : baseDelay + jitter;
+                await delay(currentDelay);
+            }
+
+            // If we successfully got episodes, break the retry loop
             if (allEpisodes.length > 0) {
-                console.log(`[getAllEpisodesWithVideo] Returning ${allEpisodes.length} episodes collected before error`);
+                // Validate: count episodes with actual video URLs
+                const episodesWithVideo = allEpisodes.filter(ep => ep.videoUrl);
+                const videoRate = episodesWithVideo.length / allEpisodes.length;
+                
+                if (videoRate >= 0.5) {
+                    // Cache with full TTL if at least 50% episodes have video URLs
+                    episodeCache.set(bookId, {
+                        timestamp: Date.now(),
+                        data: allEpisodes
+                    });
+                } else if (videoRate > 0) {
+                    // Cache with shorter TTL (2 minutes) for partial data
+                    console.warn(`[getAllEpisodesWithVideo] Only ${Math.round(videoRate * 100)}% episodes have video URLs. Using short cache TTL.`);
+                    episodeCache.set(bookId, {
+                        timestamp: Date.now() - (CACHE_TTL - 2 * 60 * 1000), // Effectively 2min TTL
+                        data: allEpisodes
+                    });
+                } else {
+                    // Don't cache if no episodes have video URLs
+                    console.warn(`[getAllEpisodesWithVideo] No episodes have video URLs. Skipping cache.`);
+                }
                 break;
             }
 
-            throw error;
-        }
-
-        // Reset retry count on success
-        retryCount = 0;
-
-        const chapterList = data?.data?.chapterList || [];
-
-        if (chapterList.length === 0) {
-            consecutiveEmpty++;
-            // Stop after 2 consecutive empty results
-            if (consecutiveEmpty >= 2) break;
-            currentIndex += BATCH_SIZE;
-            maxIterations--;
-            continue;
-        }
-
-        consecutiveEmpty = 0;
-
-        // Process each chapter with VIP bypass
-        // Process each chapter with VIP bypass
-        const processedChapters = [];
-        for (const chapter of chapterList) {
-            let cdn = chapter.cdnList?.find(c => c.isDefault === 1) || chapter.cdnList?.[0];
-            let videoPathList = cdn?.videoPathList || [];
-
-            // RETRY LOGIC FOR EMPTY VIDEO URL
-            if (videoPathList.length === 0) {
-                console.log(`[getAllEpisodesWithVideo] Empty video list for episode ${chapter.chapterId}. Retrying single fetch...`);
-                try {
-                    // Slight delay before retry
-                    await delay(500);
-                    const singleChapterData = await post('/drama-box/chapterv2/batch/load', {
-                        boundaryIndex: 0,
-                        comingPlaySectionId: -1,
-                        index: chapter.chapterIndex,
-                        currencyPlaySource: 'discover_new_rec_new',
-                        preLoad: false,
-                        loadDirection: 0,
-                        bookId
-                    });
-
-                    const singleChapter = singleChapterData?.data?.chapterList?.[0];
-                    if (singleChapter) {
-                        cdn = singleChapter.cdnList?.find(c => c.isDefault === 1) || singleChapter.cdnList?.[0];
-                        videoPathList = cdn?.videoPathList || [];
-                        if (videoPathList.length > 0) {
-                            console.log(`[getAllEpisodesWithVideo] Retry success for episode ${chapter.chapterId}`);
-                        } else {
-                            console.warn(`[getAllEpisodesWithVideo] Retry failed for episode ${chapter.chapterId}: Still no video path`);
-                        }
-                    }
-                } catch (e) {
-                    console.error(`[getAllEpisodesWithVideo] Retry error for episode ${chapter.chapterId}:`, e.message);
-                }
+            // If we finished inner loop but got nothing (and didn't trigger rotation break)
+            if (allEpisodes.length === 0 && credentialRotationCount < MAX_ROTATIONS) {
+                // Should have been caught by "Empty first batch" check, but just in case
+                break;
+            } else {
+                break;
             }
 
-            const video = videoPathList.find(v => v.quality === 720)
-                || videoPathList.find(v => v.quality === 540)
-                || videoPathList.find(v => v.quality === 480)
-                || videoPathList[0];
-
-            const availableQualities = videoPathList.map(v => ({
-                quality: v.quality,
-                url: v.videoPath,
-                isVipEquity: v.isVipEquity
-            }));
-
-            processedChapters.push({
-                chapterId: chapter.chapterId,
-                chapterName: chapter.chapterName,
-                chapterIndex: chapter.chapterIndex,
-                chapterImg: chapter.chapterImg,
-                isVip: false,
-                isLocked: false,
-                quality: video?.quality,
-                videoUrl: video?.videoPath,
-                allQualities: availableQualities,
-                duration: chapter.duration,
-                _originalIsVip: chapter.isVip
-            });
+        } catch (error) {
+            console.error(`[getAllEpisodesWithVideo] Fatal error: ${error.message}`);
+            throw error;
         }
-
-        allEpisodes = allEpisodes.concat(processedChapters);
-
-        // Check if we got less than batch size - likely last batch
-        if (chapterList.length < BATCH_SIZE) {
-            break;
-        }
-
-        // Increment index by batch size
-        currentIndex += BATCH_SIZE;
-        maxIterations--;
-
-        // Add small delay between requests to prevent rate limiting
-        await delay(150);
     }
 
-    // Remove duplicates by chapterId and sort by chapterIndex
+    // Remove duplicates and sort
     const uniqueEpisodes = [...new Map(allEpisodes.map(ep => [ep.chapterId, ep])).values()];
     uniqueEpisodes.sort((a, b) => (a.chapterIndex || 0) - (b.chapterIndex || 0));
 

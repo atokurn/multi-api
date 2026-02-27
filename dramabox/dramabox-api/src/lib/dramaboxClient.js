@@ -15,7 +15,8 @@
  * Headers reverse-engineered from DramaBox v5.4.1 via HTTP Toolkit
  */
 
-import { getCredentials, buildTnHeader, extractUserId } from './credentialsManager.js';
+import { getCredentials, rotateCredentials, buildTnHeader, extractUserId } from './credentialsManager.js';
+export { rotateCredentials };
 import { generateSignature } from './signatureGenerator.js';
 
 // Base URL untuk DramaBox API
@@ -135,10 +136,10 @@ const buildHeaders = (tnHeader, deviceId, androidId, timestamp, signature, userI
         'mcc': DEVICE_INFO.mcc,
         'mbid': '60000000000',
 
-        // Emulator/Root detection (set to match our emulator)
-        'is_emulator': '1',
-        'is_root': '1',
-        'is_vpn': '1',
+        // Emulator/Root detection (set to '0' to avoid server-side restrictions)
+        'is_emulator': '0',
+        'is_root': '0',
+        'is_vpn': '0',
 
         // Session tracking
         'afid': afid,
@@ -173,14 +174,14 @@ const buildHeaders = (tnHeader, deviceId, androidId, timestamp, signature, userI
  * @param {string} endpoint - API endpoint (tanpa base URL)
  * @param {Object} payload - Request body
  * @param {string} method - HTTP method (default: POST)
- * @param {Object} options - Additional options { lang: 'id'|'en'|'zh'|'ko', isRetry: boolean }
+ * @param {Object} options - Additional options { lang: 'id'|'en'|'zh'|'ko', isRetry: boolean, credentialIndex: number }
  * @returns {Object} Response data
  */
 export const apiRequest = async (endpoint, payload = {}, method = 'POST', options = {}) => {
-    const { lang = 'id', isRetry = false } = options;
+    const { lang = 'id', isRetry = false, credentialIndex = null } = options;
 
-    // Get credentials
-    const credentials = await getCredentials();
+    // Get credentials (optionally from specific pool index)
+    const credentials = await getCredentials(credentialIndex);
     const { deviceId, androidId, token, userId } = credentials;
 
     // Build tnHeader
@@ -207,7 +208,7 @@ export const apiRequest = async (endpoint, payload = {}, method = 'POST', option
     const headers = buildHeaders(tnHeader, deviceId, androidId, timestamp, signature, userId, lang);
 
     console.log(`[DramaBoxClient] ${method} ${endpoint}`);
-    console.log(`[DramaBoxClient] Signature: ${signature.substring(0, 30)}...`);
+    // console.log(`[DramaBoxClient] Signature: ${signature.substring(0, 30)}...`);
 
     try {
         let response;
@@ -216,30 +217,32 @@ export const apiRequest = async (endpoint, payload = {}, method = 'POST', option
 
         // Use Cloudflare Worker proxy if configured (bypasses IP blocking on Vercel)
         if (CF_PROXY_URL) {
-            console.log('[DramaBoxClient] Routing through Cloudflare proxy...');
+            // console.log('[DramaBoxClient] Routing through Cloudflare proxy...');
+            try {
+                const proxyResponse = await fetch(CF_PROXY_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        endpoint,
+                        method,
+                        body: payload,
+                        headers,
+                        timestamp
+                    })
+                });
 
-            const proxyResponse = await fetch(CF_PROXY_URL, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    endpoint,
-                    method,
-                    body: payload,
-                    headers,
-                    timestamp
-                })
-            });
+                const proxyResult = await proxyResponse.json();
 
-            const proxyResult = await proxyResponse.json();
-
-            if (!proxyResult.success) {
-                throw new Error(proxyResult.error || 'Cloudflare proxy request failed');
+                if (proxyResult.success) {
+                    // Proxy returns { success: true, data: {...} }
+                    return proxyResult.data;
+                }
+                console.warn(`[DramaBoxClient] CF Proxy returned error: ${proxyResult.error}. Falling back to direct request...`);
+            } catch (proxyError) {
+                console.warn(`[DramaBoxClient] CF Proxy failed: ${proxyError.message}. Falling back to direct request...`);
             }
-
-            // Proxy returns { success: true, data: {...} }
-            return proxyResult.data;
         }
 
         // Direct request (for local development or when proxy not configured)
@@ -320,5 +323,6 @@ export const post = async (endpoint, payload, lang = 'id') => {
 export default {
     apiRequest,
     get,
-    post
+    post,
+    rotateCredentials // Exported for manual rotation
 };
