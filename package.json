@@ -1,0 +1,10 @@
+{
+    "name": "dramawave_bypass",
+    "version": "1.0.0",
+    "description": "",
+    "main": "dramawave_vip_bypass.js",
+    "type": "module",
+    "dependencies": {
+        "axios": "^1.13.6"
+    }
+}

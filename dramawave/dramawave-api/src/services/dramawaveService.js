@@ -11,6 +11,7 @@
 
 import * as dramawaveClient from '../lib/dramawaveClient.js';
 import * as dramaCache from '../lib/dramaCache.js';
+import * as freereelsBypass from '../lib/freereelsBypass.js';
 
 /**
  * Ensure we have authentication before making API calls.
@@ -374,6 +375,25 @@ async function playEpisodeByIndex(seriesId, episodeIndex = 1) {
 
                     // Episode found but no video URL (locked/VIP)
                     if (episode) {
+                        console.log(`[DramaWaveService] Episode ${episodeIndex} locked on DramaWave, attempting FreeReels bypass...`);
+                        const bypass = await freereelsBypass.getStream(seriesId, episode.index);
+                        if (bypass.success && bypass.url) {
+                            console.log(`[DramaWaveService] 🔓 FreeReels Bypass SUCCESS for episode ${episode.id}`);
+                            return {
+                                success: true,
+                                data: {
+                                    episodeId: episode.id,
+                                    episodeIndex: episode.index,
+                                    videoUrl: bypass.url,
+                                    name: episode.name,
+                                    seriesTitle: seriesTitle,
+                                    duration: bypass.duration || episode.duration,
+                                    subtitles: episode.subtitles || [],
+                                    source: 'freereels_bypass'
+                                }
+                            };
+                        }
+
                         return {
                             success: false,
                             error: `Episode ${episodeIndex} is locked (VIP content)`,
@@ -405,6 +425,24 @@ async function playEpisodeByIndex(seriesId, episodeIndex = 1) {
                             source: 'detail_episodes'
                         }
                     };
+                } else if (episode?.id) {
+                    // Locked in detail, try bypass
+                    console.log(`[DramaWaveService] Episode ${episodeIndex} locked on DramaWave detail, attempting FreeReels bypass...`);
+                    const bypass = await freereelsBypass.getStream(seriesId, episodeIndex);
+                    if (bypass.success && bypass.url) {
+                        console.log(`[DramaWaveService] 🔓 FreeReels Bypass SUCCESS for episode ${episode.id}`);
+                        return {
+                            success: true,
+                            data: {
+                                episodeId: episode.id,
+                                episodeIndex: episodeIndex,
+                                videoUrl: bypass.url,
+                                name: episode.name,
+                                seriesTitle: detailResult.data.title,
+                                source: 'detail_episodes_bypass'
+                            }
+                        };
+                    }
                 }
             }
 
