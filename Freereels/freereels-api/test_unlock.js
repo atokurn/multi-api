@@ -1,10 +1,10 @@
-import { get, post } from './src/lib/dramawaveClient.js';
-import * as dramawaveService from './src/services/dramawaveService.js';
+import { get, post } from './src/lib/freereelsClient.js';
+import * as freereelsService from './src/services/freereelsService.js';
 
 async function testUnlock() {
     try {
         console.log("1. Ensuring authenticated state...");
-        await dramawaveService.ensureAuthenticated();
+        await freereelsService.ensureAuthenticated();
 
         console.log("2. Using a known drama ID...");
         const seriesId = "kVh9qtHl4n";
