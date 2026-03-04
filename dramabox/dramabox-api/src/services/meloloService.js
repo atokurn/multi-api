@@ -143,23 +143,17 @@ async function getVideoDetail(seriesId) {
  * Get video model (stream URLs)
  * This is the main endpoint to get playable video URLs
  * 
- * Note: The API expects item_id (episode ID) not book_id
- * item_id can be found in the directory info response
+ * Note: The API expects video_id (the vid from video_detail response)
+ * NOT item_id — confirmed via APK reverse engineering
  */
-async function getVideoModel(itemId, contentType = 1) {
-    // Try sending as query parameter first (matches intercepted traffic pattern)
+async function getVideoModel(videoId, contentType = 1) {
+    // Use video_id as query parameter (confirmed working via APK RE)
     const queryParams = {
-        item_id: itemId.toString(),
+        video_id: videoId.toString(),
         content_type: contentType.toString()
     };
 
-    // Also include in body for compatibility
-    const body = {
-        item_id: itemId.toString(),
-        content_type: contentType
-    };
-
-    const response = await meloloClient.post('/novel/player/video_model/v1/', body, queryParams);
+    const response = await meloloClient.get('/novel/player/video_model/v1/', queryParams);
 
     // Process response to decode video URLs
     if (response.data?.video_model) {
@@ -183,9 +177,19 @@ async function getVideoModel(itemId, contentType = 1) {
         }
     }
 
-    // Also try alternative: if response has main_url directly
+    // Also handle direct main_url at response data level
     if (response.data?.main_url) {
-        response.data.directVideoUrl = response.data.main_url;
+        // main_url at data level may already be decoded or base64
+        try {
+            const decoded = meloloClient.decodeBase64Url(response.data.main_url);
+            if (decoded && decoded.startsWith('http')) {
+                response.data.directVideoUrl = decoded;
+            } else {
+                response.data.directVideoUrl = response.data.main_url;
+            }
+        } catch {
+            response.data.directVideoUrl = response.data.main_url;
+        }
     }
 
     return response;
@@ -333,62 +337,83 @@ async function getTrending(lang = 'id') {
 }
 
 /**
- * Get drama detail with video list (like Sansekai API)
- * Proxies to Sansekai API for reliable signature generation
+ * Get drama detail with video list
+ * Priority:
+ *   1. Direct API call via meloloClient (self-signed)
+ *   2. Local Python Signature Server (better signatures)
+ * 
+ * NO external dependency on Sansekai API
  */
 async function getDetail(seriesId) {
     const axios = (await import('axios')).default;
+    const sources = [];
+
+    // ============================================
+    // 1. DIRECT API (self-signed via meloloClient)
+    // ============================================
+    try {
+        console.log(`[Melolo] [1/2] Trying direct API for detail seriesId: ${seriesId}`);
+
+        const body = {
+            series_id: seriesId.toString(),
+            content_type: 1
+        };
+
+        const directResponse = await meloloClient.post('/novel/player/video_detail/v1/', body);
+        if (directResponse && (directResponse.code === 0 || directResponse.data?.video_data)) {
+            console.log(`[Melolo] Direct API detail success`);
+            return directResponse;
+        }
+        sources.push({ name: 'direct', error: `code=${directResponse?.code}, msg=${directResponse?.message}` });
+    } catch (error) {
+        console.error('[Melolo] Direct API detail failed:', error.message);
+        sources.push({ name: 'direct', error: error.message });
+    }
+
+    // ============================================
+    // 2. LOCAL SIGNATURE SERVER
+    // ============================================
+    const SIG_SERVER_URL = process.env.MELOLO_SIG_SERVER || 'https://melolo-signature-server.vercel.app';
 
     try {
-        console.log(`[Melolo] Proxying detail request for seriesId: ${seriesId}`);
+        console.log(`[Melolo] [2/2] Trying signature server for detail seriesId: ${seriesId}`);
 
-        // Proxy to Sansekai API which has working signature generation
-        const response = await axios.get(`https://api.sansekai.my.id/api/melolo/detail`, {
-            params: { bookId: seriesId },
+        const response = await axios.get(`${SIG_SERVER_URL}/api/detail`, {
+            params: { seriesId },
             timeout: 30000
         });
 
-        // Sansekai API returns the data directly
-        if (response.data && (response.data.code === 0 || response.data.data?.video_data)) {
-            return response.data;
-        }
-
-        // If Sansekai returns error, throw to try fallback
-        throw new Error(response.data?.message || 'Sansekai returned error');
-    } catch (error) {
-        console.error('[Melolo Service] Sansekai proxy failed:', error.message);
-
-        // Fallback: try direct API call (may fail due to signature)
-        try {
-            const body = {
-                series_id: seriesId.toString(),
-                content_type: 1
-            };
-
-            const directResponse = await meloloClient.post('/novel/player/video_detail/v1/', body);
-            if (directResponse.code === 0) {
-                return directResponse;
+        if (response.data?.success && response.data?.data) {
+            const result = response.data.data;
+            if (result.code === 0 || result.data?.video_data) {
+                console.log(`[Melolo] Signature server detail success`);
+                return result;
             }
-
-            // Return error response
-            return {
-                success: false,
-                message: 'Both Sansekai proxy and direct API failed',
-                error: error.message,
-                data: directResponse
-            };
-        } catch (directError) {
-            console.error('[Melolo Service] Direct API also failed:', directError.message);
-            throw error;
         }
+        sources.push({ name: 'signature-server', error: response.data?.error || 'No valid detail data' });
+    } catch (error) {
+        console.error('[Melolo] Signature server detail failed:', error.message);
+        sources.push({ name: 'signature-server', error: error.message });
     }
+
+    // ============================================
+    // ALL SOURCES FAILED
+    // ============================================
+    console.error('[Melolo] All detail sources failed:', JSON.stringify(sources));
+    return {
+        success: false,
+        message: 'All detail sources failed',
+        sources
+    };
 }
 
 /**
  * Get video stream URL with fallback chain
- * 1. Primary: Sansekai API
- * 2. Backup: Python Signature Server (melolo-signature-server.vercel.app)
- * 3. Error message
+ * Priority:
+ *   1. Direct API call via meloloClient (self-signed video_model endpoint)
+ *   2. Local Python Signature Server (better native-like signatures)
+ * 
+ * NO external dependency on Sansekai API
  * 
  * @param {string} videoId - Video ID (vid from detail response)
  * @returns {object} Stream data with main_url, backup_url, expire_time
@@ -398,83 +423,96 @@ async function getStream(videoId) {
     const sources = [];
 
     // ============================================
-    // PRIMARY: Sansekai API
+    // 1. DIRECT API (self-signed via meloloClient)
     // ============================================
     try {
-        console.log(`[Melolo] [1/2] Trying Sansekai API for videoId: ${videoId}`);
+        console.log(`[Melolo] [1/2] Trying direct API for stream videoId: ${videoId}`);
 
-        const response = await axios.get(`https://api.sansekai.my.id/api/melolo/stream`, {
-            params: { videoId },
-            timeout: 15000
-        });
+        const response = await getVideoModel(videoId);
 
-        if (response.data && (response.data.data?.main_url || response.data.main_url)) {
-            console.log(`[Melolo] Sansekai API success`);
+        // Check if we got decoded video URLs
+        const parsedModel = response?.data?.parsedVideoModel;
+        if (parsedModel?.video_list) {
+            // Find best quality decoded URL
+            const qualities = ['video_4', 'video_3', 'video_2', 'video_1'];
+            for (const q of qualities) {
+                const video = parsedModel.video_list[q];
+                if (video?.decoded_main_url) {
+                    console.log(`[Melolo] Direct API stream success (quality: ${q})`);
+                    return {
+                        success: true,
+                        data: {
+                            main_url: video.decoded_main_url,
+                            backup_url: video.decoded_backup_url || null,
+                            expire_time: response.data?.expire_time,
+                            quality: q,
+                            video_model: parsedModel
+                        },
+                        source: 'direct-api'
+                    };
+                }
+            }
+        }
+
+        // Check direct main_url
+        if (response?.data?.main_url) {
+            console.log(`[Melolo] Direct API stream success (direct main_url)`);
             return {
-                ...response.data,
-                source: 'sansekai'
+                success: true,
+                data: {
+                    main_url: response.data.main_url,
+                    backup_url: response.data.backup_url_1 || null,
+                    expire_time: response.data.expire_time
+                },
+                source: 'direct-api'
             };
         }
-        sources.push({ name: 'sansekai', error: 'No main_url in response' });
+
+        sources.push({ name: 'direct', error: 'No video URL in response', responseCode: response?.code });
     } catch (error) {
-        console.error('[Melolo] Sansekai failed:', error.message);
-        sources.push({ name: 'sansekai', error: error.message });
+        console.error('[Melolo] Direct API stream failed:', error.message);
+        sources.push({ name: 'direct', error: error.message });
     }
 
     // ============================================
-    // BACKUP: Python Signature Server
+    // 2. LOCAL SIGNATURE SERVER
     // ============================================
+    const SIG_SERVER_URL = process.env.MELOLO_SIG_SERVER || 'https://melolo-signature-server.vercel.app';
+
     try {
-        console.log(`[Melolo] [2/2] Trying Python Signature Server for videoId: ${videoId}`);
+        console.log(`[Melolo] [2/2] Trying signature server for stream videoId: ${videoId}`);
 
-        // Get fresh signatures
-        const signUrl = `/novel/player/video_model/v1/?item_id=${videoId}&aid=645713`;
-        const signResponse = await axios.post('https://melolo-signature-server.vercel.app/api/sign', {
-            url: signUrl,
-            device_id: '7588647109784749575',
-            install_id: '7588654318736475654',
-            app_id: '645713'
-        }, { timeout: 10000 });
+        const response = await axios.get(`${SIG_SERVER_URL}/api/stream`, {
+            params: { videoId },
+            timeout: 30000
+        });
 
-        if (signResponse.data.success && signResponse.data.headers) {
-            const headers = signResponse.data.headers;
-
-            // Make actual request to Melolo API with signatures
-            const apiUrl = `https://api16-normal-useast5.tiktokv.us${signUrl}&device_id=7588647109784749575&iid=7588654318736475654`;
-
-            const videoResponse = await axios.get(apiUrl, {
-                headers: {
-                    'User-Agent': 'com.fiction.melolovideo/10904 (Linux; U; Android 14; en_US; sdk_gphone64_arm64; Build/UP1A.231005.007)',
-                    'Accept': 'application/json',
-                    ...headers
-                },
-                timeout: 15000
-            });
-
-            if (videoResponse.data && videoResponse.data.data) {
-                console.log(`[Melolo] Python Signature Server success`);
+        if (response.data?.success && response.data?.data) {
+            const streamData = response.data.data;
+            if (streamData.main_url) {
+                console.log(`[Melolo] Signature server stream success`);
                 return {
                     success: true,
-                    data: videoResponse.data.data,
+                    data: streamData,
                     source: 'python-signature-server'
                 };
             }
-            sources.push({ name: 'python-signature', error: 'No video data in response' });
         }
+        sources.push({ name: 'signature-server', error: response.data?.error || 'No main_url in response' });
     } catch (error) {
-        console.error('[Melolo] Python Signature Server failed:', error.message);
-        sources.push({ name: 'python-signature', error: error.message });
+        console.error('[Melolo] Signature server stream failed:', error.message);
+        sources.push({ name: 'signature-server', error: error.message });
     }
 
     // ============================================
     // ALL SOURCES FAILED
     // ============================================
-    console.error('[Melolo] All stream sources failed');
+    console.error('[Melolo] All stream sources failed:', JSON.stringify(sources));
     return {
         success: false,
         message: 'All stream sources failed',
-        sources: sources,
-        note: 'Video streaming requires ByteDance signature which is generated in native code'
+        sources,
+        note: 'Video streaming requires valid ByteDance signatures. Try deploying melolo-signature-server with updated parameters.'
     };
 }
 

@@ -7,7 +7,7 @@
  * Prefix: /api/melolo
  * 
  * Simplified API - works without manual token refresh
- * Stream endpoint proxies to Sansekai API for reliable video URLs
+ * Stream endpoint uses direct API with ByteDance signatures for video URLs
  */
 
 import express from 'express';
@@ -47,14 +47,14 @@ router.get('/directory/:bookId', controller.getDirectory);
 router.get('/directory', controller.getDirectory);  // Support query param
 
 // ============================================
-// VIDEO STREAMING (Proxied to Sansekai)
+// VIDEO STREAMING (Direct API + Signature Server)
 // ============================================
 
-// Primary stream endpoint - proxies to Sansekai API
+// Primary stream endpoint - uses direct API with fallback to signature server
 router.get('/stream', controller.getStream);
 router.get('/stream/:videoId', controller.getStream);
 
-// Legacy video endpoint - also proxies to Sansekai
+// Legacy video endpoint - uses direct API
 router.get('/video/:seriesId', controller.getVideo);
 router.get('/video', controller.getVideo);  // Support query param
 

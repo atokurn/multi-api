@@ -4,7 +4,7 @@
  * ========================================
  * 
  * HTTP client for Melolo API (ByteDance/Worldance).
- * Base URL: https://api31-normal-myb.tmtreader.com
+ * Base URL: https://api.tmtreader.com (from APK v5.1.8)
  * 
  * Now supports dynamic signature generation using
  * the ByteDance signature algorithm for X-Gorgon, X-Khronos, etc.
@@ -13,12 +13,12 @@
 import axios from 'axios';
 import { generateSecurityHeaders, generateStub } from './bytedanceSignature.js';
 
-// Configuration from intercepted traffic
-const BASE_URL = 'https://api31-normal-myb.tmtreader.com';
+// Configuration from APK v5.1.8 reverse engineering
+const BASE_URL = 'https://api.tmtreader.com';
 const APP_ID = '645713';
 const APP_NAME = 'Melolo';
-const VERSION_CODE = '51020';
-const VERSION_NAME = '5.1.0';
+const VERSION_CODE = '51080';
+const VERSION_NAME = '5.1.8';
 
 // Default device parameters (from intercepted traffic)
 const DEFAULT_DEVICE = {
@@ -193,7 +193,7 @@ async function get(endpoint, params = {}, lang = 'id') {
         'Age-Range': '3',
         'Connection': 'keep-alive',
         'Content-Type': 'application/json; charset=utf-8',
-        'Host': 'api31-normal-myb.tmtreader.com',
+
         'passport-sdk-version': '50357',
         'sdk-version': '2',
         'User-Agent': `com.worldance.drama/${VERSION_CODE} (Linux; U; Android 14; en; sdk_gphone64_arm64; Build/UE1A.230829.036.A4; Cronet/TTNetVersion:57545f6e 2025-08-04 QuicVersion:ccae1727 2025-07-24)`,
@@ -241,7 +241,7 @@ async function post(endpoint, body = {}, params = {}, lang = 'id') {
         'Age-Range': '3',
         'Connection': 'keep-alive',
         'Content-Type': 'application/json; charset=utf-8',
-        'Host': 'api31-normal-myb.tmtreader.com',
+
         'passport-sdk-version': '50357',
         'sdk-version': '2',
         'User-Agent': `com.worldance.drama/${VERSION_CODE} (Linux; U; Android 14; en; sdk_gphone64_arm64; Build/UE1A.230829.036.A4; Cronet/TTNetVersion:57545f6e 2025-08-04 QuicVersion:ccae1727 2025-07-24)`,

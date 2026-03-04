@@ -20,6 +20,10 @@
             "dest": "/api/stream.py"
         },
         {
+            "src": "/api/detail",
+            "dest": "/api/stream.py"
+        },
+        {
             "src": "/api/health",
             "dest": "/api/sign.py"
         },
