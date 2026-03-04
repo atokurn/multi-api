@@ -149,38 +149,7 @@ router.get('/search/hot', dramawaveController.getSearchHot);
  */
 router.get('/dramas/:id/play/:episode', dramawaveController.playEpisodeByIndex);
 
-// ============================================
-// V2 ENDPOINTS - Sapimu Proxy (Full Episode List)
-// ============================================
 
-/**
- * GET /v2/detail/:id
- * Get full drama details with complete episode list (via sapimu.au)
- * Returns video URLs for free episodes (typically 1-10)
- * Query: ?lang=id-ID
- */
-router.get('/v2/detail/:id', dramawaveController.getDetailV2);
-
-/**
- * GET /v2/play/:id/:episode
- * Play episode by index via sapimu.au
- * Works for free episodes (typically 1-10)
- * Query: ?lang=id-ID
- */
-router.get('/v2/play/:id/:episode', dramawaveController.playEpisodeV2);
-
-/**
- * GET /v2/episode/:id/:index
- * Get specific episode data by index (via sapimu.au)
- * Query: ?lang=id-ID
- */
-router.get('/v2/episode/:id/:index', dramawaveController.getEpisodeV2);
-
-/**
- * GET /v2/stats
- * Get rate limit and cache statistics
- */
-router.get('/v2/stats', dramawaveController.getStatsV2);
 
 export default router;
 

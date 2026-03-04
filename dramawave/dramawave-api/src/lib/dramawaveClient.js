@@ -97,7 +97,6 @@ function buildHeaders(includeAuth = true) {
         'Connection': 'Keep-Alive',
         'Host': 'api.mydramawave.com',
         'User-Agent': 'okhttp/4.12.0',
-        'Transfer-Encoding': 'chunked',
         // Device headers
         'device-id': DEFAULT_DEVICE.deviceId,
         'device': DEFAULT_DEVICE.device,
@@ -184,28 +183,48 @@ async function post(endpoint, data = {}, options = {}) {
 /**
  * Perform anonymous login to get OAuth token
  * This is required before making authenticated API calls
+ * 
+ * From decompiled LoginRequest.kt (c4/o.java):
+ * Body fields: device_id, device_name, sign
+ * sign = MD5(OAUTH_SECRET + deviceId)
  */
 async function anonymousLogin() {
     console.log('[DramaWave] Performing anonymous login...');
 
     try {
+        // Generate sign: MD5 of OAUTH_SECRET + deviceId
+        const deviceId = DEFAULT_DEVICE.deviceId;
+        const sign = crypto.createHash('md5').update(`${OAUTH_SECRET}${deviceId}`).digest('hex');
+
         const response = await post('/anonymous/login', {
-            device_id: DEFAULT_DEVICE.deviceId,
-            device: DEFAULT_DEVICE.device,
-            app_version: DEFAULT_DEVICE.appVersion
+            device_id: deviceId,
+            device_name: `${DEFAULT_DEVICE.deviceBrand} ${DEFAULT_DEVICE.deviceModel}`,
+            sign: sign
         }, { includeAuth: false, usePrefix: true });
 
-        if (response.code === 0 && response.data) {
-            currentToken = response.data.oauth_token || response.data.token || '';
-            userOauthSecret = response.data.oauth_secret || '';
-            console.log('[DramaWave] Login successful, token obtained');
+        if ((response.code === 0 || response.code === 200) && response.data) {
+            console.log('[DramaWave] Login response data:', JSON.stringify(response.data).substring(0, 500));
+
+            const newToken = response.data.auth_key || response.data.oauth_token || response.data.token || response.data.access_token || '';
+            const newSecret = response.data.auth_secret || response.data.oauth_secret || response.data.user_oauth_secret || response.data.secret || '';
+
+            if (newToken) {
+                currentToken = newToken;
+                userOauthSecret = newSecret;
+                console.log('[DramaWave] Login successful, token obtained:', currentToken.substring(0, 8) + '...');
+            } else {
+                console.log('[DramaWave] Login successful but no token found in response');
+            }
             return { success: true, data: response.data };
         }
 
-        console.log('[DramaWave] Login response:', response);
-        return { success: false, error: response.msg || 'Unknown error' };
+        console.log('[DramaWave] Login response:', JSON.stringify(response));
+        return { success: false, error: response.msg || response.message || 'Unknown error' };
     } catch (error) {
         console.error('[DramaWave] Login failed:', error.message);
+        if (error.response?.data) {
+            console.error('[DramaWave] Login error response:', JSON.stringify(error.response.data));
+        }
         return { success: false, error: error.message };
     }
 }

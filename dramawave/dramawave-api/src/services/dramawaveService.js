@@ -13,14 +13,29 @@ import * as dramawaveClient from '../lib/dramawaveClient.js';
 import * as dramaCache from '../lib/dramaCache.js';
 
 /**
- * Ensure we have authentication before making API calls
+ * Ensure we have authentication before making API calls.
+ * Attempts anonymous login once to get a dynamic token (needed for info_v2).
+ * Falls back to static pre-captured token if login fails.
  */
+let hasAttemptedDynamicLogin = false;
 async function ensureAuthenticated() {
-    if (!dramawaveClient.isAuthenticated()) {
-        const result = await dramawaveClient.anonymousLogin();
-        if (!result.success) {
-            throw new Error(`Authentication failed: ${result.error}`);
+    if (!hasAttemptedDynamicLogin) {
+        hasAttemptedDynamicLogin = true;
+        console.log('[DramaWaveService] Attempting fresh anonymous login for dynamic token...');
+        try {
+            const result = await dramawaveClient.anonymousLogin();
+            if (result.success) {
+                console.log('[DramaWaveService] Dynamic token obtained successfully');
+            } else {
+                console.log('[DramaWaveService] Dynamic login failed, using static token:', result.error);
+            }
+        } catch (err) {
+            console.log('[DramaWaveService] Dynamic login error, using static token:', err.message);
         }
+    }
+    // Ensure we have at least the static token
+    if (!dramawaveClient.isAuthenticated()) {
+        throw new Error('No authentication token available');
     }
 }
 
@@ -264,69 +279,149 @@ async function getSearchHot() {
 
 /**
  * Play episode by index (1-based)
- * Uses sapimu v2 proxy for full episode list access
+ * Multi-strategy fallback:
+ * 1. Check episode index cache (fastest)
+ * 2. Fetch episode list from native /drama/info_v2 API
+ * 3. Use currentEpisode from detail (episode 1 only)
  */
 async function playEpisodeByIndex(seriesId, episodeIndex = 1) {
     await ensureAuthenticated();
     try {
-        // Import sapimu service dynamically to avoid circular dependency
-        const sapimuService = await import('./sapimuDramawaveService.js');
-
-        // Use sapimu v2 which has full episode list with video URLs
-        const result = await sapimuService.playEpisode(seriesId, episodeIndex);
-
-        if (result.success && result.data) {
+        // STEP 1: Check episode index cache first (populated by previous calls)
+        const cachedEp = dramaCache.getEpisodeByIndex(seriesId, episodeIndex);
+        if (cachedEp && cachedEp.videoUrl) {
+            console.log(`[DramaWaveService] Cache HIT for episode ${seriesId}:${episodeIndex}`);
             return {
                 success: true,
                 data: {
-                    episodeId: result.data.id,
-                    episodeIndex: result.data.index || episodeIndex,
-                    videoUrl: result.data.videoUrl,
-                    name: result.data.name,
-                    seriesTitle: '', // Sapimu doesn't return series title in play response
-                    duration: result.data.duration,
-                    subtitles: result.data.subtitles || [],
-                    source: result.source
+                    episodeId: cachedEp.id,
+                    episodeIndex: cachedEp.index || episodeIndex,
+                    videoUrl: cachedEp.videoUrl,
+                    name: cachedEp.name,
+                    seriesTitle: cachedEp.seriesTitle || '',
+                    duration: cachedEp.duration,
+                    subtitles: cachedEp.subtitles || [],
+                    source: 'episode_cache'
                 }
             };
         }
 
-        // Fallback to old method if sapimu fails
-        const detailResult = await getDetail(seriesId);
-        if (!detailResult.success || !detailResult.data) {
-            return { success: false, error: result.error || 'Drama not found', data: null };
+        // STEP 2: Fetch episode list from native /drama/info_v2 API
+        try {
+            const infoResponse = await dramawaveClient.get('/drama/info_v2', {
+                series_id: seriesId,
+                scene: 'for_you'
+            }).catch((err) => {
+                console.error(`[DramaWaveService] info_v2 request thrown for ${seriesId}:`, err.message);
+                if (err.response?.data) console.error(`[DramaWaveService] info_v2 error data:`, err.response.data);
+                return null;
+            });
+
+            if (infoResponse) {
+                console.log(`[DramaWaveService] info_v2 response keys for ${seriesId}:`, Object.keys(infoResponse));
+                if (infoResponse.data) {
+                    console.log(`[DramaWaveService] info_v2 response.data keys:`, Object.keys(infoResponse.data));
+                }
+            }
+
+            if (infoResponse && (infoResponse.code === 200 || infoResponse.code === 0) && infoResponse.data) {
+                const seriesData = infoResponse.data.info || infoResponse.data;
+                const episodeList = seriesData.episode_list || seriesData.episodes || seriesData.items || [];
+                const seriesTitle = seriesData.title || seriesData.name || '';
+                const seriesCover = seriesData.cover || '';
+
+                if (episodeList.length > 0) {
+                    console.log(`[DramaWaveService] info_v2 parsed ${episodeList.length} episodes for ${seriesId}`);
+                    // Normalize and cache all episodes
+                    const normalizedEpisodes = episodeList.map((ep, idx) => ({
+                        id: ep.id || '',
+                        index: ep.index || idx + 1,
+                        name: ep.name || `Episode ${ep.index || idx + 1}`,
+                        cover: ep.cover || '',
+                        duration: ep.duration || 0,
+                        free: ep.free || false,
+                        unlock: ep.unlock || false,
+                        videoUrl: ep.external_audio_h264_m3u8 || ep.m3u8_url || ep.video_url || '',
+                        videoUrlH265: ep.external_audio_h265_m3u8 || '',
+                        subtitles: (ep.subtitle_list || []).map(sub => ({
+                            language: sub.language || '',
+                            url: sub.subtitle_url || sub.url || '',
+                            displayName: sub.display_name || sub.language || ''
+                        }))
+                    }));
+
+                    // Cache all episodes for future lookups
+                    dramaCache.cacheEpisodeList(seriesId, seriesTitle, seriesCover, normalizedEpisodes);
+
+                    // Find the requested episode
+                    const episode = normalizedEpisodes.find(ep => ep.index === episodeIndex);
+                    console.log(`[DramaWaveService] Search for index ${episodeIndex} returned:`, !!episode, 'videoUrl:', !!episode?.videoUrl);
+                    if (episode && episode.videoUrl) {
+                        return {
+                            success: true,
+                            data: {
+                                episodeId: episode.id,
+                                episodeIndex: episode.index,
+                                videoUrl: episode.videoUrl,
+                                name: episode.name,
+                                seriesTitle: seriesTitle,
+                                duration: episode.duration,
+                                subtitles: episode.subtitles || [],
+                                source: 'info_v2'
+                            }
+                        };
+                    }
+
+                    // Episode found but no video URL (locked/VIP)
+                    if (episode) {
+                        return {
+                            success: false,
+                            error: `Episode ${episodeIndex} is locked (VIP content)`,
+                            data: { episodeId: episode.id, episodeIndex: episode.index, locked: true }
+                        };
+                    }
+                }
+            }
+        } catch (infoErr) {
+            console.log('[DramaWaveService] info_v2 failed:', infoErr.message);
         }
 
-        // If drama has episodes list, find by index
-        const episodes = detailResult.data.episodes || [];
-        if (episodes.length >= episodeIndex) {
-            const episode = episodes[episodeIndex - 1];
-            if (episode?.videoUrl) {
+        // STEP 4: Fallback to getDetail (may retrieve from forYou cache)
+        const detailResult = await getDetail(seriesId);
+        if (detailResult.success && detailResult.data) {
+            // Try episodes array from detail
+            const episodes = detailResult.data.episodes || [];
+            if (episodes.length >= episodeIndex) {
+                const episode = episodes[episodeIndex - 1];
+                if (episode?.videoUrl) {
+                    return {
+                        success: true,
+                        data: {
+                            episodeId: episode.id,
+                            episodeIndex: episodeIndex,
+                            videoUrl: episode.videoUrl,
+                            name: episode.name,
+                            seriesTitle: detailResult.data.title,
+                            source: 'detail_episodes'
+                        }
+                    };
+                }
+            }
+
+            // Last resort: use currentEpisode (only works for episode 1)
+            if (detailResult.data.currentEpisode?.videoUrl && episodeIndex === 1) {
                 return {
                     success: true,
                     data: {
-                        episodeId: episode.id,
-                        episodeIndex: episodeIndex,
-                        videoUrl: episode.videoUrl,
-                        name: episode.name,
-                        seriesTitle: detailResult.data.title
+                        episodeId: detailResult.data.currentEpisode.id,
+                        episodeIndex: 1,
+                        videoUrl: detailResult.data.currentEpisode.videoUrl,
+                        name: detailResult.data.currentEpisode.name,
+                        seriesTitle: detailResult.data.title,
+                        source: 'currentEpisode'
                     }
                 };
             }
-        }
-
-        // Fallback: return current episode from detail (only episode 1)
-        if (detailResult.data.currentEpisode?.videoUrl && episodeIndex === 1) {
-            return {
-                success: true,
-                data: {
-                    episodeId: detailResult.data.currentEpisode.id,
-                    episodeIndex: 1,
-                    videoUrl: detailResult.data.currentEpisode.videoUrl,
-                    name: detailResult.data.currentEpisode.name,
-                    seriesTitle: detailResult.data.title
-                }
-            };
         }
 
         return { success: false, error: `Episode ${episodeIndex} not available`, data: null };
@@ -439,17 +534,88 @@ async function getDetail(seriesId) {
 
 /**
  * Get episode list for a drama
+ * Uses series_id param (confirmed from decompiled Retrofit interface)
  */
-async function getEpisodes(seriesKey, page = 1, limit = 100) {
+async function getEpisodes(seriesId, page = 1, limit = 100) {
     await ensureAuthenticated();
 
     try {
+        // Try /drama/info_v2 with series_id (confirmed from decompiled InterfaceC1148h.java)
         const response = await dramawaveClient.get('/drama/info_v2', {
-            series_key: seriesKey,  // API uses series_key not series_id
-            page,
-            page_size: limit
+            series_id: seriesId,
+            scene: 'for_you'
         });
-        return normalizeEpisodesResponse(response);
+
+        if (response && (response.code === 200 || response.code === 0) && response.data) {
+            const data = response.data.info || response.data;
+            const episodeList = data.episode_list || data.episodes || data.items || [];
+
+            if (episodeList.length > 0) {
+                const normalizedEpisodes = episodeList.map(normalizeEpisode).filter(ep => ep !== null);
+                const seriesTitle = data.title || data.name || '';
+                const seriesCover = data.cover || '';
+
+                // Cache all episodes for future lookups
+                dramaCache.cacheEpisodeList(seriesId, seriesTitle, seriesCover, normalizedEpisodes);
+
+                return {
+                    success: true,
+                    data: normalizedEpisodes,
+                    pagination: {
+                        page: page,
+                        hasMore: false,
+                        total: normalizedEpisodes.length
+                    },
+                    source: 'info_v2'
+                };
+            }
+        }
+
+        // Fallback: check if we have episodes in the drama cache
+        const cached = dramaCache.getDrama(seriesId);
+        if (cached && cached.episodes && cached.episodes.length > 0) {
+            return {
+                success: true,
+                data: cached.episodes,
+                pagination: {
+                    page: 1,
+                    hasMore: false,
+                    total: cached.episodes.length
+                },
+                source: 'cache'
+            };
+        }
+
+        // Fallback: if only currentEpisode available, return that
+        if (cached && cached.currentEpisode) {
+            return {
+                success: true,
+                data: [{
+                    id: cached.currentEpisode.id,
+                    index: cached.currentEpisode.index || 1,
+                    name: cached.currentEpisode.name || 'Episode 1',
+                    cover: cached.currentEpisode.cover || '',
+                    duration: cached.currentEpisode.duration || 0,
+                    free: true,
+                    unlock: true,
+                    videoUrl: cached.currentEpisode.videoUrl || '',
+                    hasVideo: !!cached.currentEpisode.videoUrl
+                }],
+                pagination: {
+                    page: 1,
+                    hasMore: true,
+                    total: cached.episodeCount || 1
+                },
+                source: 'cache_current_only',
+                note: 'Only episode 1 available via cache. Full episode list requires API access.'
+            };
+        }
+
+        return {
+            success: false,
+            error: `No episodes found for series ${seriesId}. Try fetching /foryou first.`,
+            data: []
+        };
     } catch (error) {
         console.error('[DramaWaveService] getEpisodes failed:', error.message);
         throw error;
@@ -728,7 +894,37 @@ function normalizeSeries(series) {
     if (!series) return null;
 
     // Handle both direct series and nested container structure
-    const episodeInfo = series.container?.episode_info || {};
+    const container = series.container || {};
+    const episodeInfo = container.episode_info || {};
+    const nextEpisode = container.next_episode || null;
+
+    // Build currentEpisode from episode_info
+    const currentEpisode = episodeInfo.id ? {
+        id: episodeInfo.id,
+        name: episodeInfo.name || '',
+        cover: episodeInfo.cover || '',
+        videoUrl: episodeInfo.external_audio_h264_m3u8 || episodeInfo.m3u8_url || episodeInfo.video_url || '',
+        videoUrlH265: episodeInfo.external_audio_h265_m3u8 || '',
+        duration: episodeInfo.duration || 0,
+        index: episodeInfo.index || 1
+    } : null;
+
+    // Build episodes array from available container data
+    const episodes = [];
+    if (currentEpisode) {
+        episodes.push(currentEpisode);
+    }
+    if (nextEpisode && nextEpisode.id) {
+        episodes.push({
+            id: nextEpisode.id,
+            name: nextEpisode.name || '',
+            cover: nextEpisode.cover || '',
+            videoUrl: nextEpisode.external_audio_h264_m3u8 || nextEpisode.m3u8_url || nextEpisode.video_url || '',
+            videoUrlH265: nextEpisode.external_audio_h265_m3u8 || '',
+            duration: nextEpisode.duration || 0,
+            index: nextEpisode.index || 2
+        });
+    }
 
     return {
         id: series.id || series.key || '',
@@ -744,32 +940,40 @@ function normalizeSeries(series) {
         tags: series.content_tags || series.tag || [],
         rating: series.hot_score || '',
         payIndex: series.pay_index || 0,
-        // Current episode info if available
-        currentEpisode: episodeInfo.id ? {
-            id: episodeInfo.id,
-            name: episodeInfo.name || '',
-            cover: episodeInfo.cover || '',
-            videoUrl: episodeInfo.external_audio_h264_m3u8 || episodeInfo.m3u8_url || '',
-            duration: episodeInfo.duration || 0,
-            index: episodeInfo.index || 1
-        } : null
+        // Current episode info
+        currentEpisode,
+        // All available episodes (ep1 + ep2 from container)
+        episodes: episodes.length > 0 ? episodes : undefined
     };
 }
 
 /**
  * Normalize Episode object
+ * Extracts video URLs from multiple possible fields
  */
-function normalizeEpisode(episode) {
+function normalizeEpisode(episode, idx = undefined) {
+    if (!episode) return null;
+
+    const videoUrl = episode.external_audio_h264_m3u8 || episode.m3u8_url || episode.video_url || '';
+    const index = episode.index || (idx !== undefined ? idx + 1 : 0);
+
     return {
         id: episode.id || '',
-        index: episode.index || 0,
-        name: episode.name || `Episode ${episode.index || 0}`,
+        index: index,
+        name: episode.name || `Episode ${index}`,
         cover: episode.cover || '',
         duration: episode.duration || 0,
         free: episode.free || false,
         unlock: episode.unlock || false,
         price: episode.episode_price || 0,
-        hasVideo: !!(episode.video_url || episode.m3u8_url)
+        videoUrl: videoUrl,
+        videoUrlH265: episode.external_audio_h265_m3u8 || '',
+        hasVideo: !!videoUrl,
+        subtitles: (episode.subtitle_list || []).map(sub => ({
+            language: sub.language || '',
+            url: sub.subtitle_url || sub.url || '',
+            displayName: sub.display_name || sub.language || ''
+        }))
     };
 }
 

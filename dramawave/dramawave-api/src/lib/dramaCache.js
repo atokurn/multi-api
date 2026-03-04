@@ -12,6 +12,7 @@
 // Cache storage
 const dramaCache = new Map();
 const episodeCache = new Map();
+const episodeIndexCache = new Map(); // key: "seriesId:index" -> episode
 let lastCacheUpdate = 0;
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
@@ -33,12 +34,21 @@ function cacheDrama(drama) {
 
     // Also cache current episode if present
     if (drama.currentEpisode?.id) {
-        episodeCache.set(drama.currentEpisode.id, {
+        const epData = {
             ...drama.currentEpisode,
             seriesId: id,
             seriesTitle: drama.title,
             seriesCover: drama.cover
-        });
+        };
+        episodeCache.set(drama.currentEpisode.id, epData);
+        if (drama.currentEpisode.index) {
+            episodeIndexCache.set(`${id}:${drama.currentEpisode.index}`, epData);
+        }
+    }
+
+    // Cache episodes from episode_list if present
+    if (Array.isArray(drama.episodes)) {
+        cacheEpisodeList(id, drama.title, drama.cover, drama.episodes);
     }
 }
 
@@ -74,6 +84,49 @@ function getEpisode(episodeId) {
 }
 
 /**
+ * Get episode from cache by series ID and episode index
+ * @param {string} seriesId - Series ID or key
+ * @param {number} index - Episode index (1-based)
+ * @returns {Object|null} Episode object or null
+ */
+function getEpisodeByIndex(seriesId, index) {
+    return episodeIndexCache.get(`${seriesId}:${index}`) || null;
+}
+
+/**
+ * Cache all episodes from an episode list
+ * @param {string} seriesId - Series ID
+ * @param {string} seriesTitle - Series title
+ * @param {string} seriesCover - Series cover URL
+ * @param {Array} episodes - Array of episode objects
+ */
+function cacheEpisodeList(seriesId, seriesTitle, seriesCover, episodes) {
+    if (!Array.isArray(episodes) || !seriesId) return;
+
+    let cached = 0;
+    for (const ep of episodes) {
+        const epData = {
+            ...ep,
+            seriesId,
+            seriesTitle: seriesTitle || '',
+            seriesCover: seriesCover || ''
+        };
+
+        if (ep.id) {
+            episodeCache.set(ep.id, epData);
+        }
+        if (ep.index) {
+            episodeIndexCache.set(`${seriesId}:${ep.index}`, epData);
+        }
+        cached++;
+    }
+
+    if (cached > 0) {
+        console.log(`[DramaCache] Cached ${cached} episodes for series: ${seriesId}`);
+    }
+}
+
+/**
  * Check if cache is stale
  * @returns {boolean}
  */
@@ -89,6 +142,7 @@ function getCacheStats() {
     return {
         dramaCount: dramaCache.size,
         episodeCount: episodeCache.size,
+        episodeIndexCount: episodeIndexCache.size,
         lastUpdate: lastCacheUpdate,
         isStale: isCacheStale(),
         ttlRemaining: Math.max(0, CACHE_TTL - (Date.now() - lastCacheUpdate))
@@ -101,6 +155,7 @@ function getCacheStats() {
 function clearCache() {
     dramaCache.clear();
     episodeCache.clear();
+    episodeIndexCache.clear();
     lastCacheUpdate = 0;
     console.log('[DramaCache] Cache cleared');
 }
@@ -118,6 +173,8 @@ export {
     cacheDramas,
     getDrama,
     getEpisode,
+    getEpisodeByIndex,
+    cacheEpisodeList,
     isCacheStale,
     getCacheStats,
     clearCache,

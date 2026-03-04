@@ -14,12 +14,8 @@ const swaggerDocument = {
     },
     servers: [
         {
-            url: 'https://dramawave-api.vercel.app',
-            description: 'Production'
-        },
-        {
-            url: 'http://localhost:3000',
-            description: 'Development'
+            url: '/',
+            description: 'Current Environment'
         }
     ],
     tags: [
