@@ -41,8 +41,11 @@ rootAVD/
 frida_*.js
 ssl_bypass.js
 
-# Temporary development files
+# Temporary development & research files (Global)
 temp/
+
+# Temporary development & research files (Per-Provider)
+*/temp/
 
 # Token cache (will be regenerated)
 tokenCache.json

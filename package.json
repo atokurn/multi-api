@@ -1,10 +1,38 @@
 {
-    "name": "dramawave_bypass",
-    "version": "1.0.0",
-    "description": "",
-    "main": "dramawave_vip_bypass.js",
-    "type": "module",
-    "dependencies": {
-        "axios": "^1.13.6"
-    }
+  "name": "dramawave_bypass",
+  "version": "1.0.0",
+  "description": "Monorepo for Drama APIs",
+  "type": "module",
+  "workspaces": [
+    "dramabox/dramabox-api",
+    "dramanova/dramanova-api",
+    "dramawave/dramawave-api",
+    "flickreels/flickreels-api",
+    "flickreels/flickreels-cache-server",
+    "flickreels/flickreels-unlock-node",
+    "freereels/freereels-api",
+    "netshort/netshort-api",
+    "shortmax/shortmax-api"
+  ],
+  "scripts": {
+    "start": "echo 'Silakan gunakan perintah: npm run start:all atau npm run start:<provider_name>'",
+    "start:all": "concurrently -c \"cyan,magenta,yellow,green,blue,red\" \"npm run start:dramabox\" \"npm run start:dramanova\" \"npm run start:netshort\"",
+    "start:dramabox": "npm run start --workspace=dramabox/dramabox-api",
+    "start:dramanova": "npm run start --workspace=dramanova/dramanova-api",
+    "start:netshort": "npm run start --workspace=netshort/netshort-api",
+    "dev:all": "concurrently -c \"cyan,magenta,yellow,green,blue,red\" \"npm run dev:dramabox\" \"npm run dev:dramanova\" \"npm run dev:netshort\"",
+    "dev:dramabox": "npm run dev --workspace=dramabox/dramabox-api",
+    "dev:dramanova": "npm run dev --workspace=dramanova/dramanova-api",
+    "dev:netshort": "npm run dev --workspace=netshort/netshort-api"
+  },
+  "dependencies": {
+    "axios": "^1.13.6",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "nodemon": "^3.0.1"
+  }
 }
