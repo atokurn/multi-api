@@ -1,5 +1,5 @@
 
-import { getDetail, getChapters, getVideoUrl, getSdkDeviceConfig } from './src/services/shortmaxService.js';
+import { getDetail, getChapters, getVideoUrl, getSdkDeviceConfig } from './shortmax-api/src/services/shortmaxService.js';
 
 async function testShortMax() {
     console.log('🚀 Testing ShortMax (Sapimu Proxy) Services...\n');
